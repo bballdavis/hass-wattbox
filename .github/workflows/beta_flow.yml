@@ -45,7 +45,9 @@ jobs:
           
       - name: Compare library versions
         id: compare
+        shell: bash
         run: |
+          set -e
           echo "Comparing library versions..."
           
           # Function to get version from __init__.py
@@ -80,52 +82,59 @@ jobs:
             echo "✅ Versions match!"
           fi
           
+          # Save debug output for summary
+          echo "--- Compare Library Versions Debug ---" > compare_versions_debug.txt
+          echo "Current version: $CURRENT_VERSION" >> compare_versions_debug.txt
+          echo "Latest version: $LATEST_VERSION" >> compare_versions_debug.txt
+          echo "Versions match: $(if [ \"$CURRENT_VERSION\" == \"$LATEST_VERSION\" ]; then echo 'true'; else echo 'false'; fi)" >> compare_versions_debug.txt
+          
       - name: Compare file contents
         id: compare-files
+        shell: bash
         run: |
+          set -e
           echo "Comparing file contents..."
           
           # Get all Python files from the source directory
           if [ -d "pywattbox/pywattbox" ]; then
-            FILES=($(find pywattbox/pywattbox -name "*.py" -type f -printf "%f\n" | sort))
+            mapfile -t FILES < <(find pywattbox/pywattbox -name "*.py" -type f -printf "%f\n" | sort)
           else
-            echo "❌ Source directory pywattbox/pywattbox not found"
+            echo "❌ Source directory pywattbox/pywattbox not found" | tee compare_files_debug.txt
             exit 1
           fi
           
           CHANGES_DETECTED=false
           CHANGED_FILES=""
+          DEBUG_LOG="--- Compare File Contents Debug ---\n"
           
           for file in "${FILES[@]}"; do
             CURRENT_FILE="hass-wattbox/custom_components/wattbox/pywattbox/$file"
             LATEST_FILE="pywattbox/pywattbox/$file"
             
-            echo "Checking $file..."
+            DEBUG_LOG+="Checking $file...\n"
             
             if [ ! -f "$CURRENT_FILE" ]; then
-              echo "❌ $file is missing in current repository"
+              DEBUG_LOG+="❌ $file is missing in current repository\n"
               CHANGES_DETECTED=true
               CHANGED_FILES="$CHANGED_FILES\n- $file (missing)"
               continue
             fi
             
             if [ ! -f "$LATEST_FILE" ]; then
-              echo "⚠️ $file is missing in latest repository"
+              DEBUG_LOG+="⚠️ $file is missing in latest repository\n"
               continue
             fi
             
             # Compare file contents (ignoring whitespace differences)
             if ! diff -w "$CURRENT_FILE" "$LATEST_FILE" > /dev/null 2>&1; then
-              echo "❌ $file has differences"
+              DEBUG_LOG+="❌ $file has differences\n"
               CHANGES_DETECTED=true
               CHANGED_FILES="$CHANGED_FILES\n- $file (content differs)"
-              
               # Show the differences
-              echo "Differences in $file:"
-              diff -u "$CURRENT_FILE" "$LATEST_FILE" | head -20
-              echo "..."
+              DEBUG_LOG+="Differences in $file:\n"
+              DEBUG_LOG+="$(diff -u "$CURRENT_FILE" "$LATEST_FILE" | head -20)\n...\n"
             else
-              echo "✅ $file matches"
+              DEBUG_LOG+="✅ $file matches\n"
             fi
           done
           
@@ -133,6 +142,9 @@ jobs:
           echo "changed_files<<EOF" >> $GITHUB_OUTPUT
           echo -e "$CHANGED_FILES" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
+          
+          # Save debug output for summary
+          echo -e "$DEBUG_LOG" > compare_files_debug.txt
           
       - name: Create issue if outdated
         if: steps.compare.outputs.versions_match == 'false' || steps.compare-files.outputs.changes_detected == 'true'
@@ -249,6 +261,7 @@ jobs:
             }
             
       - name: Summary
+        shell: bash
         run: |
           echo "## Summary" >> $GITHUB_STEP_SUMMARY
           echo "| Item | Status |" >> $GITHUB_STEP_SUMMARY
@@ -262,8 +275,20 @@ jobs:
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### ⚠️ Action Required" >> $GITHUB_STEP_SUMMARY
             echo "The PyWattBox library needs to be updated on the beta branch. Check the issues tab for details." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "#### Debug Output: Compare Library Versions" >> $GITHUB_STEP_SUMMARY
+            cat compare_versions_debug.txt >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "#### Debug Output: Compare File Contents" >> $GITHUB_STEP_SUMMARY
+            cat compare_files_debug.txt >> $GITHUB_STEP_SUMMARY
           else
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### ✅ All Good" >> $GITHUB_STEP_SUMMARY
             echo "PyWattBox library is up to date on the beta branch!" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "#### Debug Output: Compare Library Versions" >> $GITHUB_STEP_SUMMARY
+            cat compare_versions_debug.txt >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "#### Debug Output: Compare File Contents" >> $GITHUB_STEP_SUMMARY
+            cat compare_files_debug.txt >> $GITHUB_STEP_SUMMARY
           fi
