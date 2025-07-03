@@ -21,15 +21,16 @@ jobs:
     steps:
       # Checkout steps must come first so both source and destination exist
       - name: Checkout current repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
         with:
           path: hass-wattbox
           ref: ${{ github.ref_name }}
       - name: Checkout PyWattBox-800 library repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
         with:
           repository: bballdavis/pywattbox_800
           path: pywattbox_800
+          ref: main
 
       # Recursive sync with debug and summary
       - name: Sync pywattbox_800 files to custom_component if missing or outdated
@@ -284,18 +285,30 @@ jobs:
         run: |
           set -e
           echo "Verifying branch sync..."
-          # Checkout master branch
-          git -C hass-wattbox checkout master
-          MASTER_FILES=$(find hass-wattbox/custom_components/wattbox/pywattbox_800/ -type f | sort)
-          # Checkout beta branch
-          git -C hass-wattbox checkout beta
-          BETA_FILES=$(find hass-wattbox/custom_components/wattbox/pywattbox_800/ -type f | sort)
+          # Check if master branch exists
+          if git -C hass-wattbox show-ref --verify --quiet refs/heads/master; then
+            git -C hass-wattbox checkout master
+            MASTER_FILES=$(find hass-wattbox/custom_components/wattbox/pywattbox_800/ -type f | sort)
+          else
+            echo "❌ Master branch does not exist" | tee branch_sync_debug.txt
+            echo "branch_sync_match=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          # Check if beta branch exists
+          if git -C hass-wattbox show-ref --verify --quiet refs/heads/beta; then
+            git -C hass-wattbox checkout beta
+            BETA_FILES=$(find hass-wattbox/custom_components/wattbox/pywattbox_800/ -type f | sort)
+          else
+            echo "❌ Beta branch does not exist" | tee -a branch_sync_debug.txt
+            echo "branch_sync_match=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
           # Compare file lists
           if [ "$MASTER_FILES" != "$BETA_FILES" ]; then
-            echo "❌ File lists differ between master and beta branches" | tee branch_sync_debug.txt
+            echo "❌ File lists differ between master and beta branches" | tee -a branch_sync_debug.txt
             echo "branch_sync_match=false" >> $GITHUB_OUTPUT
           else
-            echo "✅ File lists match between master and beta branches" | tee branch_sync_debug.txt
+            echo "✅ File lists match between master and beta branches" | tee -a branch_sync_debug.txt
             echo "branch_sync_match=true" >> $GITHUB_OUTPUT
           fi
           # Compare file contents
