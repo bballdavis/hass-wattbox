@@ -52,16 +52,7 @@ jobs:
           echo "--- Files copied/updated ---" > sync_summary.txt
           grep -E '^>f|\*deleting' rsync_actual.txt | tee -a sync_summary.txt || true
           echo "--- End of sync summary ---" >> sync_summary.txt
-      - name: Checkout current repository
-        uses: actions/checkout@v4
-        with:
-          path: hass-wattbox
-          ref: ${{ github.ref_name }}
-      - name: Checkout PyWattBox-800 library repository
-        uses: actions/checkout@v4
-        with:
-          repository: bballdavis/pywattbox_800
-          path: pywattbox_800
+      # ...existing code...
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -92,17 +83,17 @@ jobs:
           LATEST_FILE="pywattbox_800/__init__.py"
           CURRENT_VERSION=$(get_version "$CURRENT_FILE")
           LATEST_VERSION=$(get_version "$LATEST_FILE")
-          if [ "$CURRENT_VERSION" = "missing" ]; then
-            echo "ERROR: $CURRENT_FILE not found!" >&2
+          if [ "$CURRENT_VERSION" = "missing" ] || [ "$CURRENT_VERSION" = "unknown" ]; then
+            echo "ERROR: $CURRENT_FILE not found or version not set!" >&2
             exit 1
           fi
-          if [ "$LATEST_VERSION" = "missing" ]; then
-            echo "ERROR: $LATEST_FILE not found!" >&2
+          if [ "$LATEST_VERSION" = "missing" ] || [ "$LATEST_VERSION" = "unknown" ]; then
+            echo "ERROR: $LATEST_FILE not found or version not set!" >&2
             exit 1
           fi
           echo "Current version in hass-wattbox: $CURRENT_VERSION"
           echo "Latest version in pywattbox_800: $LATEST_VERSION"
-          # Set outputs
+          # Set outputs only if valid
           echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
           echo "latest_version=$LATEST_VERSION" >> $GITHUB_OUTPUT
           # Compare versions
@@ -173,7 +164,8 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
           # Save debug output for summary
           echo -e "$DEBUG_LOG" > compare_files_debug.txt
-      - name: Create issue if outdated
+      # Only one set of issue creation/closure steps is needed
+      - name: Create or update issue if outdated
         if: steps.compare.outputs.versions_match == 'false' || steps.compare-files.outputs.changes_detected == 'true'
         uses: actions/github-script@v7
         with:
@@ -192,9 +184,9 @@ jobs:
               labels: ['pywattbox-update']
             });
             const existingIssue = issues.data.find(issue => 
-              issue.title.includes('PyWattBox-800 Library Update Available')
+              issue.title.includes('PyWattBox Library Update Available')
             );
-            let body = `## 🔄 PyWattBox-800 Library Update Available\n\n`;
+            let body = `## 🔄 PyWattBox Library Update Available\n\n`;
             if (!versionsMatch) {
               body += `### Version Mismatch\n`;
               body += `- **Current version**: \`${currentVersion}\`\n`;
@@ -205,14 +197,14 @@ jobs:
               body += `The following files have differences:\n${changedFiles}\n\n`;
             }
             body += `### Action Required\n`;
-            body += `Please update the PyWattBox-800 library in the \`custom_components/wattbox/pywattbox_800/\` folder on **all active branches** (master, main, and beta) with the latest version from [pywattbox_800](https://github.com/bballdavis/pywattbox_800).\n\n`;
+            body += `Please update the PyWattBox library in the \`custom_components/wattbox/pywattbox_800/\` folder on **all active branches** (master, main, and beta) with the latest version from [pywattbox_800](https://github.com/bballdavis/pywattbox_800).\n\n`;
             body += `### How to Update\n`;
             body += `1. Download the latest files from the [pywattbox_800 repository](https://github.com/bballdavis/pywattbox_800/tree/main/pywattbox_800)\n`;
             body += `2. Replace the files in \`custom_components/wattbox/pywattbox_800/\` on all branches (master, main, beta)\n`;
             body += `3. Test the integration to ensure compatibility\n`;
             body += `4. Update the version number if needed\n\n`;
             body += `---\n`;
-            body += `*This issue was automatically created by the PyWattBox-800 library version check workflow.*`;
+            body += `*This issue was automatically created by the PyWattBox library version check workflow.*`;
             if (existingIssue) {
               // Update existing issue
               await github.rest.issues.update({
@@ -234,7 +226,7 @@ jobs:
               const issue = await github.rest.issues.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                title: `PyWattBox-800 Library Update Available (v${latestVersion})`,
+                title: `PyWattBox Library Update Available (v${latestVersion})`,
                 body: body,
                 labels: ['pywattbox-update', 'enhancement']
               });
@@ -254,7 +246,7 @@ jobs:
               labels: ['pywattbox-update']
             });
             const existingIssue = issues.data.find(issue => 
-              issue.title.includes('PyWattBox-800 Library Update Available')
+              issue.title.includes('PyWattBox Library Update Available')
             );
             if (existingIssue) {
               await github.rest.issues.update({
@@ -267,7 +259,7 @@ jobs:
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: existingIssue.number,
-                body: `✅ **Resolved**: PyWattBox-800 library is now up to date on all branches. Closing this issue automatically.`
+                body: `✅ **Resolved**: PyWattBox library is now up to date on all branches. Closing this issue automatically.`
               });
               console.log(`Closed issue #${existingIssue.number} as library is up to date`);
             }
