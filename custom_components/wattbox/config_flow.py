@@ -37,10 +37,15 @@ _LOGGER = logging.getLogger(__name__)
 # Data schema for user input
 
 # Connection type dropdown and HTTP options
-CONNECTION_TYPES = {
-    "HTTP (80)": 80,
-    "Telnet (23)": 23,
-    "SSH (22)": 22,
+CONNECTION_TYPES = [
+    "HTTP",
+    "Telnet",
+    "SSH"
+]
+CONNECTION_TYPE_PORTS = {
+    "HTTP": 80,
+    "Telnet": 23,
+    "SSH": 22,
 }
 HTTP_OPTIONS = [
     "audible_alarm", "auto_reboot", "battery_health", "battery_test", "cloud_status",
@@ -49,32 +54,25 @@ HTTP_OPTIONS = [
 ]
 
 def build_user_schema(user_input=None):
-    connection_type = (user_input or {}).get("connection_type", "HTTP (80)")
-    port = CONNECTION_TYPES[connection_type]
+    # Default to Telnet
+    connection_type = (user_input or {}).get("connection_type", "Telnet")
+    port = CONNECTION_TYPE_PORTS[connection_type]
+    schema = {
+        vol.Required(CONF_HOST, default=(user_input or {}).get(CONF_HOST, "")): cv.string,
+        vol.Required("connection_type", default=connection_type): vol.In(CONNECTION_TYPES),
+        vol.Optional(CONF_USERNAME, default=(user_input or {}).get(CONF_USERNAME, DEFAULT_USER)): cv.string,
+        vol.Optional(CONF_PASSWORD, default=(user_input or {}).get(CONF_PASSWORD, DEFAULT_PASSWORD)): cv.string,
+        vol.Optional(CONF_NAME, default=(user_input or {}).get(CONF_NAME, DEFAULT_NAME)): cv.string,
+    }
     if port == 80:
         # HTTP: show HTTP options, hide power monitoring
-        schema = {
-            vol.Required(CONF_HOST, default=(user_input or {}).get(CONF_HOST, "")): cv.string,
-            vol.Required("connection_type", default=connection_type): vol.In(CONNECTION_TYPES),
-            vol.Optional(CONF_PORT, default=80): cv.port,
-            vol.Optional(CONF_USERNAME, default=(user_input or {}).get(CONF_USERNAME, DEFAULT_USER)): cv.string,
-            vol.Optional(CONF_PASSWORD, default=(user_input or {}).get(CONF_PASSWORD, DEFAULT_PASSWORD)): cv.string,
-            vol.Optional(CONF_NAME, default=(user_input or {}).get(CONF_NAME, DEFAULT_NAME)): cv.string,
-        }
         for opt in HTTP_OPTIONS:
             schema[vol.Optional(opt, default=True)] = cv.boolean
-        return vol.Schema(schema)
-    else:
-        # Telnet/SSH: show power monitoring
-        return vol.Schema({
-            vol.Required(CONF_HOST, default=(user_input or {}).get(CONF_HOST, "")): cv.string,
-            vol.Required("connection_type", default=connection_type): vol.In(CONNECTION_TYPES),
-            vol.Optional(CONF_PORT, default=port): cv.port,
-            vol.Optional(CONF_USERNAME, default=(user_input or {}).get(CONF_USERNAME, DEFAULT_USER)): cv.string,
-            vol.Optional(CONF_PASSWORD, default=(user_input or {}).get(CONF_PASSWORD, DEFAULT_PASSWORD)): cv.string,
-            vol.Optional(CONF_NAME, default=(user_input or {}).get(CONF_NAME, DEFAULT_NAME)): cv.string,
-            vol.Optional(CONF_ENABLE_POWER_SENSORS, default=(user_input or {}).get(CONF_ENABLE_POWER_SENSORS, DEFAULT_ENABLE_POWER_SENSORS)): cv.boolean,
-        })
+    elif port == 23:
+        # Telnet: show power monitoring
+        schema[vol.Optional(CONF_ENABLE_POWER_SENSORS, default=(user_input or {}).get(CONF_ENABLE_POWER_SENSORS, DEFAULT_ENABLE_POWER_SENSORS))] = cv.boolean
+    # SSH: no extra options
+    return vol.Schema(schema)
 
 
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
@@ -83,7 +81,8 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
     Data has the keys from STEP_USER_DATA_SCHEMA with values provided by the user.
     """
     # Select API based on port
-    port = data.get(CONF_PORT, 80)
+    connection_type = data.get("connection_type", "Telnet")
+    port = CONNECTION_TYPE_PORTS[connection_type]
     if port == 80:
         client = PyWattBoxWrapper(
             data[CONF_HOST],
@@ -136,7 +135,7 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
             pass
 
 
-class ConfigFlow(config_entries.ConfigFlow):
+class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for WattBox."""
 
     VERSION = 1
@@ -144,24 +143,56 @@ class ConfigFlow(config_entries.ConfigFlow):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Handle the initial step."""
+        """Step 1: Select connection type."""
         errors: dict[str, str] = {}
-
         if user_input is not None:
+            # Save connection type and move to next step
+            self.connection_type = user_input["connection_type"]
+            return await self.async_step_connection_details()
+        # Only show connection type dropdown
+        return self.async_show_form(
+            step_id="user",
+            data_schema=vol.Schema({
+                vol.Required("connection_type", default="Telnet"): vol.In(CONNECTION_TYPES)
+            }),
+            errors=errors,
+        )
+
+    async def async_step_connection_details(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Step 2: Show fields based on connection type."""
+        errors: dict[str, str] = {}
+        connection_type = getattr(self, "connection_type", "Telnet")
+        port = CONNECTION_TYPE_PORTS[connection_type]
+        # Build schema for this connection type
+        schema = {
+            vol.Required(CONF_HOST, default=(user_input or {}).get(CONF_HOST, "")): cv.string,
+            vol.Optional(CONF_USERNAME, default=(user_input or {}).get(CONF_USERNAME, DEFAULT_USER)): cv.string,
+            vol.Optional(CONF_PASSWORD, default=(user_input or {}).get(CONF_PASSWORD, DEFAULT_PASSWORD)): cv.string,
+            vol.Optional(CONF_NAME, default=(user_input or {}).get(CONF_NAME, DEFAULT_NAME)): cv.string,
+        }
+        if port == 80:
+            for opt in HTTP_OPTIONS:
+                schema[vol.Optional(opt, default=True)] = cv.boolean
+        elif port == 23:
+            schema[vol.Optional(CONF_ENABLE_POWER_SENSORS, default=(user_input or {}).get(CONF_ENABLE_POWER_SENSORS, DEFAULT_ENABLE_POWER_SENSORS))] = cv.boolean
+        # SSH: no extra options
+        if user_input is not None:
+            # Merge connection type into user_input for validation
+            user_input["connection_type"] = connection_type
             try:
                 info = await validate_input(self.hass, user_input)
             except CannotConnect:
                 errors["base"] = "cannot_connect"
             except InvalidAuth:
                 errors["base"] = "invalid_auth"
-            except Exception:  # pylint: disable=broad-except
+            except Exception:
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
             else:
-                # Check if already configured (by service tag)
                 await self.async_set_unique_id(info["service_tag"])
                 self._abort_if_unique_id_configured()
-                # Create the config entry
                 return self.async_create_entry(
                     title=info["title"],
                     data=user_input,
@@ -172,15 +203,14 @@ class ConfigFlow(config_entries.ConfigFlow):
                         "outlet_count": str(info["outlet_count"]),
                     },
                 )
-
         return self.async_show_form(
-            step_id="user",
-            data_schema=build_user_schema(user_input),
+            step_id="connection_details",
+            data_schema=vol.Schema(schema),
             errors=errors,
             description_placeholders={
                 "default_username": DEFAULT_USER,
                 "default_password": DEFAULT_PASSWORD,
-                "default_port": str(DEFAULT_PORT),
+                "default_port": str(port),
             },
         )
 

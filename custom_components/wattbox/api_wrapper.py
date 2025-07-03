@@ -7,7 +7,7 @@ This class adapts the pywattbox (HTTP API) client to the v2.4-style interface ex
 - Extra HTTP-only features are exposed with their native names/format.
 """
 
-from custom_components.wattbox.pywattbox.http_wattbox import HttpWattBox
+from .pywattbox.http_wattbox import HttpWattBox
 
 class PyWattBoxWrapper:
     def __init__(self, host, username, password, port=80, **kwargs):
@@ -38,12 +38,22 @@ class PyWattBoxWrapper:
         }
 
     def get_system_info(self):
-        return {
-            'model': self._client.hardware_version,
-            'firmware': self._client.firmware_version,
-            'hostname': self._client.hostname,
-            'serial_number': self._client.serial_number,
-        }
+        # Create a simple object that mimics SystemInfo structure
+        class SystemInfoCompat:
+            def __init__(self, model, firmware, hostname, serial_number, outlet_count):
+                self.model = model
+                self.firmware = firmware
+                self.hostname = hostname
+                self.service_tag = serial_number  # Use service_tag to match WattBoxClient
+                self.outlet_count = outlet_count
+        
+        return SystemInfoCompat(
+            model=self._client.hardware_version,
+            firmware=self._client.firmware_version,
+            hostname=self._client.hostname,
+            serial_number=self._client.serial_number,
+            outlet_count=self._client.number_outlets
+        )
 
     def get_model(self):
         return self._client.hardware_version
@@ -73,7 +83,7 @@ class PyWattBoxWrapper:
         ]
 
     def set_outlet(self, outlet, action, delay=None):
-        from custom_components.wattbox.pywattbox.base import Commands
+        from .pywattbox.base import Commands
         cmd = getattr(Commands, action.upper(), None)
         if cmd is None:
             raise ValueError(f"Invalid action: {action}")

@@ -21,6 +21,7 @@ from .const import DOMAIN
 # Import API library components directly
 from .pywattbox_800.client import WattBoxClient
 from .pywattbox_800.exceptions import WattBoxConnectionError, WattBoxError
+from .api_wrapper import PyWattBoxWrapper
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -170,24 +171,37 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     _LOGGER.info(f"WattBox Integration: Connecting to {host}:{port}")
 
-    # Create the client
-    client = WattBoxClient(
-        host=host,
-        port=port,
-        username=username,
-        password=password,
-        timeout=10.0
-    )
+    # Create the client based on port (same logic as config flow)
+    if port == 80:
+        client = PyWattBoxWrapper(
+            host,
+            username,
+            password,
+            port=port,
+        )
+    else:
+        client = WattBoxClient(
+            host=host,
+            port=port,
+            username=username,
+            password=password,
+            timeout=10.0
+        )
 
     # Test the connection
     try:
         _LOGGER.info("Connecting to WattBox at %s:%s", host, port)
         await hass.async_add_executor_job(client.connect)
-        await hass.async_add_executor_job(client.ping)
+        # Only ping for non-HTTP clients (HTTP wrapper doesn't support ping)
+        if port != 80:
+            await hass.async_add_executor_job(client.ping)
         _LOGGER.info("Successfully connected to WattBox at %s", host)
         # Don't disconnect - let the coordinator manage the connection
     except WattBoxError as err:
         _LOGGER.error("Failed to connect to WattBox at %s: %s", host, err)
+        raise ConfigEntryNotReady from err
+    except Exception as err:
+        _LOGGER.error("Unexpected error connecting to WattBox at %s: %s", host, err)
         raise ConfigEntryNotReady from err
 
     # Create the coordinator
