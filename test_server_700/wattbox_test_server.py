@@ -3,8 +3,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
 import xml.etree.ElementTree as ET
 
-USERNAME = "admin"
-PASSWORD = "admin"
+USERNAME = "wattbox"
+PASSWORD = "wattbox"
 PORT = 80
 
 # Simulate a WB-700-IPV-12 (12 outlets)

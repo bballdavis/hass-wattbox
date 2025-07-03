@@ -5,7 +5,8 @@ import logging
 from typing import Any, Dict, Optional
 
 import voluptuous as vol # type: ignore
-from homeassistant import config_entries, core, exceptions  # type: ignore
+from homeassistant import config_entries # type: ignore
+from homeassistant import exceptions # type: ignore
 from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PASSWORD, CONF_PORT, CONF_USERNAME  # type: ignore
 from homeassistant.core import HomeAssistant  # type: ignore
 from homeassistant.data_entry_flow import FlowResult  # type: ignore
@@ -140,10 +141,10 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
             pass
 
 
+@config_entries.HANDLERS.register(DOMAIN)
 class ConfigFlow(config_entries.ConfigFlow):
-    DOMAIN = DOMAIN
     """Handle a config flow for WattBox."""
-
+    
     VERSION = 1
 
     async def async_step_user(
@@ -160,11 +161,12 @@ class ConfigFlow(config_entries.ConfigFlow):
             self.connection_type = user_input["connection_type"]
             return await self.async_step_connection_details()
         # Only show connection type dropdown
+        data_schema = vol.Schema({
+            vol.Required("connection_type", default="Telnet"): vol.In(CONNECTION_TYPES)
+        })
         return self.async_show_form(
             step_id="user",
-            data_schema=vol.Schema({
-                vol.Required("connection_type", default="Telnet"): vol.In(CONNECTION_TYPES)
-            }),
+            data_schema=data_schema,
             errors=errors,
         )
 
@@ -226,8 +228,7 @@ class ConfigFlow(config_entries.ConfigFlow):
                 "default_username": DEFAULT_USER,
                 "default_password": DEFAULT_PASSWORD,
                 "default_port": str(port),
-            },
-            translation_key="user",  # Use the same translation key as the first step
+            }
         )
 
     async def async_step_reconfigure(

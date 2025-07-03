@@ -28,10 +28,12 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS: List[str] = ["sensor", "switch", "binary_sensor"]
 
 
+from typing import Union
+
 class WattBoxUpdateCoordinator(DataUpdateCoordinator):
     """WattBox data update coordinator."""
 
-    def __init__(self, hass: HomeAssistant, client: WattBoxClient) -> None:
+    def __init__(self, hass: HomeAssistant, client: Union[WattBoxClient, PyWattBoxWrapper]) -> None:
         """Initialize the coordinator."""
         super().__init__(
             hass,
