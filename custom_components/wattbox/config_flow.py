@@ -39,13 +39,11 @@ _LOGGER = logging.getLogger(__name__)
 # Connection type dropdown and HTTP options
 CONNECTION_TYPES = [
     "HTTP",
-    "Telnet",
-    "SSH"
+    "Telnet"
 ]
 CONNECTION_TYPE_PORTS = {
     "HTTP": 80,
     "Telnet": 23,
-    "SSH": 22,
 }
 HTTP_OPTIONS = [
     "audible_alarm", "auto_reboot", "battery_health", "battery_test", "cloud_status",
@@ -135,7 +133,8 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
             pass
 
 
-class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class ConfigFlow(config_entries.ConfigFlow):
+    DOMAIN = DOMAIN
     """Handle a config flow for WattBox."""
 
     VERSION = 1
@@ -143,8 +142,12 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Step 1: Select connection type."""
+        """Step 1: Show all fields except connection type for reconfigure, else show connection type selector."""
         errors: dict[str, str] = {}
+        # If this is a reconfigure context, skip connection type selection
+        if self.context.get("reconfigure"):
+            # Use the same logic as reconfigure step (see below)
+            return await self.async_step_reconfigure(user_input)
         if user_input is not None:
             # Save connection type and move to next step
             self.connection_type = user_input["connection_type"]
@@ -161,7 +164,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_connection_details(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Step 2: Show fields based on connection type."""
+        """Step 2: Show fields based on connection type, with translation references."""
         errors: dict[str, str] = {}
         connection_type = getattr(self, "connection_type", "Telnet")
         port = CONNECTION_TYPE_PORTS[connection_type]
@@ -177,7 +180,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 schema[vol.Optional(opt, default=True)] = cv.boolean
         elif port == 23:
             schema[vol.Optional(CONF_ENABLE_POWER_SENSORS, default=(user_input or {}).get(CONF_ENABLE_POWER_SENSORS, DEFAULT_ENABLE_POWER_SENSORS))] = cv.boolean
-        # SSH: no extra options
+        # No SSH
         if user_input is not None:
             # Merge connection type into user_input for validation
             user_input["connection_type"] = connection_type
@@ -203,6 +206,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         "outlet_count": str(info["outlet_count"]),
                     },
                 )
+        # Use translation_key for step 2, matching the previous version of stage 1
         return self.async_show_form(
             step_id="connection_details",
             data_schema=vol.Schema(schema),
@@ -212,16 +216,36 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 "default_password": DEFAULT_PASSWORD,
                 "default_port": str(port),
             },
+            translation_key="user",  # Use the same translation key as the first step
         )
 
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Handle reconfiguration of an existing entry."""
+        """Handle reconfiguration of an existing entry. Do not allow changing connection type, and show correct sensor toggles."""
         entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
         errors: dict[str, str] = {}
 
+        # Use the connection type from the existing entry
+        connection_type = entry.data.get("connection_type", "Telnet")
+        port = CONNECTION_TYPE_PORTS[connection_type]
+
+        # Build schema for this connection type (no connection type selector)
+        schema = {
+            vol.Required(CONF_HOST, default=(user_input or entry.data or {}).get(CONF_HOST, "")): cv.string,
+            vol.Optional(CONF_USERNAME, default=(user_input or entry.data or {}).get(CONF_USERNAME, DEFAULT_USER)): cv.string,
+            vol.Optional(CONF_PASSWORD, default=(user_input or entry.data or {}).get(CONF_PASSWORD, DEFAULT_PASSWORD)): cv.string,
+            vol.Optional(CONF_NAME, default=(user_input or entry.data or {}).get(CONF_NAME, DEFAULT_NAME)): cv.string,
+        }
+        if port == 80:
+            for opt in HTTP_OPTIONS:
+                schema[vol.Optional(opt, default=(user_input or entry.data or {}).get(opt, True))] = cv.boolean
+        elif port == 23:
+            schema[vol.Optional(CONF_ENABLE_POWER_SENSORS, default=(user_input or entry.data or {}).get(CONF_ENABLE_POWER_SENSORS, DEFAULT_ENABLE_POWER_SENSORS))] = cv.boolean
+
         if user_input is not None:
+            # Always use the original connection type
+            user_input["connection_type"] = connection_type
             try:
                 info = await validate_input(self.hass, user_input)
             except CannotConnect:
@@ -240,10 +264,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # Pre-fill with existing data
             user_input = entry.data if entry.data is not None else {}
 
-        # Use the same dynamic schema as the user step
         return self.async_show_form(
             step_id="reconfigure",
-            data_schema=build_user_schema(user_input),
+            data_schema=vol.Schema(schema),
             errors=errors,
         )
 
