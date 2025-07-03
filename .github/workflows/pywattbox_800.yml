@@ -71,7 +71,6 @@ jobs:
           # Function to get version from __init__.py
           get_version() {
             local file="$1"
-            echo "Checking for file: $file"
             if [ -f "$file" ]; then
               grep -E '^__version__\s*=' "$file" | sed 's/.*=\s*["\x27]\([^"\x27]*\)["\x27].*/\1/' || echo "unknown"
             else
@@ -81,19 +80,9 @@ jobs:
           # Get versions
           CURRENT_FILE="hass-wattbox/custom_components/wattbox/pywattbox_800/__init__.py"
           LATEST_FILE="pywattbox_800/__init__.py"
-          CURRENT_VERSION=$(get_version "$CURRENT_FILE")
-          LATEST_VERSION=$(get_version "$LATEST_FILE")
-          if [ "$CURRENT_VERSION" = "missing" ] || [ "$CURRENT_VERSION" = "unknown" ]; then
-            echo "ERROR: $CURRENT_FILE not found or version not set!" >&2
-            exit 1
-          fi
-          if [ "$LATEST_VERSION" = "missing" ] || [ "$LATEST_VERSION" = "unknown" ]; then
-            echo "ERROR: $LATEST_FILE not found or version not set!" >&2
-            exit 1
-          fi
-          echo "Current version in hass-wattbox: $CURRENT_VERSION"
-          echo "Latest version in pywattbox_800: $LATEST_VERSION"
-          # Set outputs only if valid
+          CURRENT_VERSION=$(get_version "$CURRENT_FILE" | tr -d '\n')
+          LATEST_VERSION=$(get_version "$LATEST_FILE" | tr -d '\n')
+          # Ensure version strings are clean before writing to $GITHUB_OUTPUT
           echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
           echo "latest_version=$LATEST_VERSION" >> $GITHUB_OUTPUT
           # Compare versions
