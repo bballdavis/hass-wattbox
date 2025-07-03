@@ -285,25 +285,25 @@ jobs:
         run: |
           set -e
           echo "Verifying branch sync..."
-          # Check if master branch exists
+          # Checkout master branch in hass-wattbox repository
           if git -C hass-wattbox show-ref --verify --quiet refs/heads/master; then
             git -C hass-wattbox checkout master
             MASTER_FILES=$(find hass-wattbox/custom_components/wattbox/pywattbox_800/ -type f | sort)
           else
-            echo "❌ Master branch does not exist" | tee branch_sync_debug.txt
+            echo "❌ Master branch does not exist in hass-wattbox repository" | tee branch_sync_debug.txt
             echo "branch_sync_match=false" >> $GITHUB_OUTPUT
             exit 1
           fi
-          # Check if beta branch exists
+          # Checkout beta branch in hass-wattbox repository
           if git -C hass-wattbox show-ref --verify --quiet refs/heads/beta; then
             git -C hass-wattbox checkout beta
             BETA_FILES=$(find hass-wattbox/custom_components/wattbox/pywattbox_800/ -type f | sort)
           else
-            echo "❌ Beta branch does not exist" | tee -a branch_sync_debug.txt
+            echo "❌ Beta branch does not exist in hass-wattbox repository" | tee -a branch_sync_debug.txt
             echo "branch_sync_match=false" >> $GITHUB_OUTPUT
             exit 1
           fi
-          # Compare file lists
+          # Compare file lists between master and beta branches
           if [ "$MASTER_FILES" != "$BETA_FILES" ]; then
             echo "❌ File lists differ between master and beta branches" | tee -a branch_sync_debug.txt
             echo "branch_sync_match=false" >> $GITHUB_OUTPUT
@@ -311,7 +311,7 @@ jobs:
             echo "✅ File lists match between master and beta branches" | tee -a branch_sync_debug.txt
             echo "branch_sync_match=true" >> $GITHUB_OUTPUT
           fi
-          # Compare file contents
+          # Compare file contents between master and beta branches
           SYNC_MISMATCH=false
           for file in $MASTER_FILES; do
             BETA_FILE="${file/master/beta}"
