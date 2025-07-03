@@ -54,10 +54,15 @@ HTTP_OPTIONS = [
 def build_user_schema(user_input=None):
     # Default to Telnet
     connection_type = (user_input or {}).get("connection_type", "Telnet")
-    port = CONNECTION_TYPE_PORTS[connection_type]
+    # Always set port based on connection type
+    if connection_type == "HTTP":
+        port = 80
+    else:
+        port = 23
     schema = {
         vol.Required(CONF_HOST, default=(user_input or {}).get(CONF_HOST, "")): cv.string,
         vol.Required("connection_type", default=connection_type): vol.In(CONNECTION_TYPES),
+        vol.Optional(CONF_PORT, default=port): cv.port,
         vol.Optional(CONF_USERNAME, default=(user_input or {}).get(CONF_USERNAME, DEFAULT_USER)): cv.string,
         vol.Optional(CONF_PASSWORD, default=(user_input or {}).get(CONF_PASSWORD, DEFAULT_PASSWORD)): cv.string,
         vol.Optional(CONF_NAME, default=(user_input or {}).get(CONF_NAME, DEFAULT_NAME)): cv.string,
@@ -80,8 +85,10 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
     """
     # Select API based on port
     connection_type = data.get("connection_type", "Telnet")
-    port = CONNECTION_TYPE_PORTS[connection_type]
-    if port == 80:
+    port = int(data.get(CONF_PORT, CONNECTION_TYPE_PORTS[connection_type]))
+    
+    # Use HTTP API for port 80, Telnet API for others
+    if connection_type == "HTTP" or port == 80:
         client = PyWattBoxWrapper(
             data[CONF_HOST],
             data.get(CONF_USERNAME, DEFAULT_USER),
@@ -171,19 +178,23 @@ class ConfigFlow(config_entries.ConfigFlow):
         # Build schema for this connection type
         schema = {
             vol.Required(CONF_HOST, default=(user_input or {}).get(CONF_HOST, "")): cv.string,
+            vol.Required(CONF_PORT, default=(user_input or {}).get(CONF_PORT, port)): cv.port,
             vol.Optional(CONF_USERNAME, default=(user_input or {}).get(CONF_USERNAME, DEFAULT_USER)): cv.string,
             vol.Optional(CONF_PASSWORD, default=(user_input or {}).get(CONF_PASSWORD, DEFAULT_PASSWORD)): cv.string,
             vol.Optional(CONF_NAME, default=(user_input or {}).get(CONF_NAME, DEFAULT_NAME)): cv.string,
         }
-        if port == 80:
+        # Add HTTP or Telnet specific options
+        if connection_type == "HTTP":
             for opt in HTTP_OPTIONS:
                 schema[vol.Optional(opt, default=True)] = cv.boolean
-        elif port == 23:
+        elif connection_type == "Telnet":
             schema[vol.Optional(CONF_ENABLE_POWER_SENSORS, default=(user_input or {}).get(CONF_ENABLE_POWER_SENSORS, DEFAULT_ENABLE_POWER_SENSORS))] = cv.boolean
         # No SSH
         if user_input is not None:
             # Merge connection type into user_input for validation
             user_input["connection_type"] = connection_type
+            # Use the port the user entered, or the default for the connection type
+            user_input[CONF_PORT] = user_input.get(CONF_PORT, port)
             try:
                 info = await validate_input(self.hass, user_input)
             except CannotConnect:
@@ -233,19 +244,21 @@ class ConfigFlow(config_entries.ConfigFlow):
         # Build schema for this connection type (no connection type selector)
         schema = {
             vol.Required(CONF_HOST, default=(user_input or entry.data or {}).get(CONF_HOST, "")): cv.string,
+            vol.Required(CONF_PORT, default=(user_input or entry.data or {}).get(CONF_PORT, port)): cv.port,
             vol.Optional(CONF_USERNAME, default=(user_input or entry.data or {}).get(CONF_USERNAME, DEFAULT_USER)): cv.string,
             vol.Optional(CONF_PASSWORD, default=(user_input or entry.data or {}).get(CONF_PASSWORD, DEFAULT_PASSWORD)): cv.string,
             vol.Optional(CONF_NAME, default=(user_input or entry.data or {}).get(CONF_NAME, DEFAULT_NAME)): cv.string,
         }
-        if port == 80:
+        if connection_type == "HTTP":
             for opt in HTTP_OPTIONS:
                 schema[vol.Optional(opt, default=(user_input or entry.data or {}).get(opt, True))] = cv.boolean
-        elif port == 23:
+        elif connection_type == "Telnet":
             schema[vol.Optional(CONF_ENABLE_POWER_SENSORS, default=(user_input or entry.data or {}).get(CONF_ENABLE_POWER_SENSORS, DEFAULT_ENABLE_POWER_SENSORS))] = cv.boolean
 
         if user_input is not None:
             # Always use the original connection type
             user_input["connection_type"] = connection_type
+            user_input[CONF_PORT] = user_input.get(CONF_PORT, port)
             try:
                 info = await validate_input(self.hass, user_input)
             except CannotConnect:
