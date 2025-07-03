@@ -25,12 +25,20 @@ jobs:
         with:
           path: hass-wattbox
           ref: ${{ github.ref_name }}
+      - name: Get latest release tag from pywattbox_800
+        id: get-latest-release
+        shell: bash
+        run: |
+          set -e
+          TAG=$(curl -s https://api.github.com/repos/bballdavis/pywattbox_800/releases/latest | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "Latest release tag: $TAG"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
       - name: Checkout PyWattBox-800 library repository
         uses: actions/checkout@v3
         with:
           repository: bballdavis/pywattbox_800
           path: pywattbox_800
-          ref: main
+          ref: ${{ steps.get-latest-release.outputs.tag }}
       - name: Fetch all branches in hass-wattbox
         shell: bash
         run: |
@@ -479,3 +487,31 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Branch Sync Status" >> $GITHUB_STEP_SUMMARY
           echo "Both 'master' and 'beta' branches are being synced successfully." >> $GITHUB_STEP_SUMMARY
+      - name: Create PR for pywattbox_800 sync
+        id: create-pr
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_BRANCH: ${{ github.ref_name }}
+        run: |
+          set -e
+          cd hass-wattbox
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          BRANCH="auto/pywattbox-sync-$(date +%Y%m%d-%H%M%S)"
+          git checkout -b "$BRANCH"
+          git add custom_components/wattbox/pywattbox_800/
+          if ! git diff --cached --quiet; then
+            git commit -m "Automated sync: update pywattbox_800 files"
+            git push origin "$BRANCH"
+            # Check if a PR already exists for this branch
+            if ! gh pr list --head "$BRANCH" --base "$BASE_BRANCH" --json number | grep -q 'number'; then
+              gh pr create --title "Automated sync: update pywattbox_800 files" \
+                --body "This PR was created automatically by the sync workflow." \
+                --base "$BASE_BRANCH" --head "$BRANCH"
+            else
+              echo "PR already exists for $BRANCH"
+            fi
+          else
+            echo "No changes to commit."
+          fi
