@@ -8,13 +8,13 @@ on:
     # Allow manual triggering
   pull_request:
     paths:
-      - 'custom_components/wattbox/pywattbox_api_v2_4/**'
+      - 'custom_components/wattbox/pywattbox_800/**'
   push:
     branches:
       - master
       - main
     paths:
-      - 'custom_components/wattbox/pywattbox_api_v2_4/**'
+      - 'custom_components/wattbox/pywattbox_800/**'
 
 jobs:
   check-library-version:
@@ -59,8 +59,8 @@ jobs:
           }
           
           # Get versions
-          CURRENT_VERSION=$(get_version "hass-wattbox/custom_components/wattbox/pywattbox_api_v2_4/__init__.py")
-          LATEST_VERSION=$(get_version "pywattbox_800/pywattbox_api_v2_4/__init__.py")
+          CURRENT_VERSION=$(get_version "hass-wattbox/custom_components/wattbox/pywattbox_800/__init__.py")
+          LATEST_VERSION=$(get_version "pywattbox_800/pywattbox_800/__init__.py")
           
           echo "Current version in hass-wattbox: $CURRENT_VERSION"
           echo "Latest version in pywattbox_800: $LATEST_VERSION"
@@ -99,8 +99,8 @@ jobs:
           CHANGED_FILES=""
           
           for file in "${FILES[@]}"; do
-            CURRENT_FILE="hass-wattbox/custom_components/wattbox/pywattbox_api_v2_4/$file"
-            LATEST_FILE="pywattbox_800/pywattbox_api_v2_4/$file"
+            CURRENT_FILE="hass-wattbox/custom_components/wattbox/pywattbox_800/$file"
+            LATEST_FILE="pywattbox_800/pywattbox_800/$file"
             
             echo "Checking $file..."
             
@@ -174,10 +174,10 @@ jobs:
             }
             
             body += `### Action Required\n`;
-            body += `Please update the PyWattBox API library in the \`custom_components/wattbox/pywattbox_api_v2_4/\` folder with the latest version from [pywattbox_800](https://github.com/bballdavis/pywattbox_800).\n\n`;
+            body += `Please update the PyWattBox API library in the \`custom_components/wattbox/pywattbox_800/\` folder with the latest version from [pywattbox_800](https://github.com/bballdavis/pywattbox_800).\n\n`;
             body += `### How to Update\n`;
-            body += `1. Download the latest files from the [pywattbox_800 repository](https://github.com/bballdavis/pywattbox_800/tree/main/pywattbox_api_v2_4)\n`;
-            body += `2. Replace the files in \`custom_components/wattbox/pywattbox_api_v2_4/\`\n`;
+            body += `1. Download the latest files from the [pywattbox_800 repository](https://github.com/bballdavis/pywattbox_800/tree/main/pywattbox_800)\n`;
+            body += `2. Replace the files in \`custom_components/wattbox/pywattbox_800/\`\n`;
             body += `3. Test the integration to ensure compatibility\n`;
             body += `4. Update the version number if needed\n\n`;
             body += `---\n`;

@@ -44,7 +44,16 @@ async def async_setup_entry(
     
     entities = []
     
-    # System sensors (on main WattBox device)
+    # --- Dynamic entity setup based on API type ---
+    # For HTTP API (pywattbox), only create switch and status sensor per outlet, and main device sensors for available fields.
+    # For v2.4 API, retain existing dynamic logic.
+    # See: custom_components/wattbox/pywattbox/wattbox_api_v2.0.md for HTTP API fields
+    # See: custom_components/wattbox/pywattbox_800/README.md for v2.4 API fields
+
+    client = getattr(coordinator, "client", None)
+    is_http_api = client and client.__class__.__name__ in ("PyWattBoxWrapper", "HttpWattBox")
+
+    # System sensors (always create these)
     entities.extend([
         WattBoxSystemSensor(coordinator, "firmware", "Firmware"),
         WattBoxSystemSensor(coordinator, "model", "Model"),
@@ -52,40 +61,66 @@ async def async_setup_entry(
         WattBoxSystemSensor(coordinator, "service_tag", "Service Tag"),
         WattBoxSystemSensor(coordinator, "outlet_count", "Outlet Count"),
     ])
-    
-    # Power status sensors (if available and enabled, on main WattBox device)
-    if enable_power_sensors and coordinator.data and coordinator.data.get("power_status"):
-        entities.extend([
-            WattBoxPowerSensor(coordinator, "voltage", "Voltage", UnitOfElectricPotential.VOLT),
-            WattBoxPowerSensor(coordinator, "current", "Current", UnitOfElectricCurrent.AMPERE),
-            WattBoxPowerSensor(coordinator, "power", "Power", UnitOfPower.WATT),
-        ])
-    
-    # UPS sensors (if available, on main WattBox device)
-    if coordinator.data and coordinator.data.get("ups_connected"):
-        entities.extend([
-            WattBoxUPSSensor(coordinator, "battery_level", "UPS Battery Level", PERCENTAGE),
-            WattBoxUPSSensor(coordinator, "runtime_remaining", "UPS Runtime Remaining"),
-            WattBoxUPSSensor(coordinator, "status", "UPS Status"),
-        ])
-    
-    # Outlet sensors (on individual outlet devices)
+
+    # Power/UPS sensors (only if available and enabled)
+    if not is_http_api:
+        # v2.4 API: retain existing dynamic logic
+        if enable_power_sensors and coordinator.data and coordinator.data.get("power_status"):
+            entities.extend([
+                WattBoxPowerSensor(coordinator, "voltage", "Voltage", UnitOfElectricPotential.VOLT),
+                WattBoxPowerSensor(coordinator, "current", "Current", UnitOfElectricCurrent.AMPERE),
+                WattBoxPowerSensor(coordinator, "power", "Power", UnitOfPower.WATT),
+            ])
+        if coordinator.data and coordinator.data.get("ups_connected"):
+            entities.extend([
+                WattBoxUPSSensor(coordinator, "battery_level", "UPS Battery Level", PERCENTAGE),
+                WattBoxUPSSensor(coordinator, "runtime_remaining", "UPS Runtime Remaining"),
+                WattBoxUPSSensor(coordinator, "status", "UPS Status"),
+            ])
+    else:
+        # HTTP API: Only create power sensors if present in wattbox_info.xml
+        if enable_power_sensors and coordinator.data and coordinator.data.get("power_status"):
+            ps = coordinator.data["power_status"]
+            if getattr(ps, "voltage_volts", None) is not None:
+                entities.append(WattBoxPowerSensor(coordinator, "voltage", "Voltage", UnitOfElectricPotential.VOLT))
+            if getattr(ps, "current_amps", None) is not None:
+                entities.append(WattBoxPowerSensor(coordinator, "current", "Current", UnitOfElectricCurrent.AMPERE))
+            if getattr(ps, "power_watts", None) is not None:
+                entities.append(WattBoxPowerSensor(coordinator, "power", "Power", UnitOfPower.WATT))
+        # UPS sensors: only if present
+        if coordinator.data and coordinator.data.get("ups_status"):
+            ups = coordinator.data["ups_status"]
+            if getattr(ups, "battery_charge", None) is not None:
+                entities.append(WattBoxUPSSensor(coordinator, "battery_level", "UPS Battery Level", PERCENTAGE))
+            if getattr(ups, "battery_runtime", None) is not None:
+                entities.append(WattBoxUPSSensor(coordinator, "runtime_remaining", "UPS Runtime Remaining"))
+            if getattr(ups, "battery_health", None) is not None:
+                entities.append(WattBoxUPSSensor(coordinator, "status", "UPS Status"))
+
+    # Outlet sensors
     if coordinator.data and coordinator.data.get("outlets"):
         outlet_count = len(coordinator.data['outlets'])
         _LOGGER.info(f"Creating sensors for {outlet_count} outlets")
-        
         for outlet in coordinator.data["outlets"]:
-            # Create power sensors for each outlet only if enabled
-            if enable_power_sensors:
-                _LOGGER.info(f"Creating power sensors for outlet {outlet.index} ({outlet.name})")
-                for sensor_type, sensor_config in OUTLET_SENSOR_TYPES.items():
-                    entities.append(WattBoxOutletSensor(
-                        coordinator, outlet.index, outlet.name, sensor_type, 
-                        sensor_config["name"], sensor_config["unit"], sensor_config["icon"]
-                    ))
+            if is_http_api:
+                # HTTP API: Only create a status sensor per outlet (no per-outlet power sensors)
+                # The status sensor can be a binary_sensor or a regular sensor (here, regular for compatibility)
+                # If you want a binary_sensor, move this logic to binary_sensor.py
+                entities.append(WattBoxOutletSensor(
+                    coordinator, outlet.index, outlet.name, "status", f"Outlet {outlet.index} Status", None, None
+                ))
             else:
-                _LOGGER.info(f"Power sensors disabled, skipping outlet {outlet.index}")
-    
+                # v2.4 API: retain existing dynamic logic
+                if enable_power_sensors:
+                    _LOGGER.info(f"Creating power sensors for outlet {outlet.index} ({outlet.name})")
+                    for sensor_type, sensor_config in OUTLET_SENSOR_TYPES.items():
+                        entities.append(WattBoxOutletSensor(
+                            coordinator, outlet.index, outlet.name, sensor_type, 
+                            sensor_config["name"], sensor_config["unit"], sensor_config["icon"]
+                        ))
+                else:
+                    _LOGGER.info(f"Power sensors disabled, skipping outlet {outlet.index}")
+
     _LOGGER.info(f"Successfully created {len(entities)} WattBox sensors")
     async_add_entities(entities)
 

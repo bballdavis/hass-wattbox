@@ -27,14 +27,25 @@ async def async_setup_entry(
     
     entities = []
     
+    # --- Dynamic entity setup based on API type ---
+    # For HTTP API (pywattbox), only create switch per outlet, using outlet_status for outlet count.
+    # For v2.4 API, retain existing dynamic logic.
+    # See: custom_components/wattbox/pywattbox/wattbox_api_v2.0.md for HTTP API fields
+    # See: custom_components/wattbox/pywattbox_800/README.md for v2.4 API fields
+
+    client = getattr(coordinator, "client", None)
+    is_http_api = client and client.__class__.__name__ in ("PyWattBoxWrapper", "HttpWattBox")
+
     # Master switch (remains on main WattBox device)
     entities.append(WattBoxMasterSwitch(coordinator))
-    
-    # Individual outlet switches (now on separate outlet devices)
+
+    # Individual outlet switches
     if coordinator.data and coordinator.data.get("outlets"):
         for outlet in coordinator.data["outlets"]:
+            # For HTTP API, only create a switch per outlet (no extra logic needed, wrapper handles control)
+            # For v2.4 API, retain existing logic
             entities.append(WattBoxOutletSwitch(coordinator, outlet.index, outlet.name))
-    
+
     async_add_entities(entities)
 
 

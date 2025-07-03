@@ -3,8 +3,8 @@
 from datetime import timedelta
 from typing import Dict, Final, List, TypedDict
 
-from homeassistant.components.binary_sensor import BinarySensorDeviceClass
-from homeassistant.const import (
+from homeassistant.components.binary_sensor import BinarySensorDeviceClass # type: ignore
+from homeassistant.const import ( # type: ignore
     UnitOfElectricPotential,
     PERCENTAGE,
     UnitOfPower,

@@ -19,8 +19,8 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from .const import DOMAIN
 
 # Import API library components directly
-from .pywattbox_api_v2_4.client import WattBoxClient
-from .pywattbox_api_v2_4.exceptions import WattBoxConnectionError, WattBoxError
+from .pywattbox_800.client import WattBoxClient
+from .pywattbox_800.exceptions import WattBoxConnectionError, WattBoxError
 
 _LOGGER = logging.getLogger(__name__)
 

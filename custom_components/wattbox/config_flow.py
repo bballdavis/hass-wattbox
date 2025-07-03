@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
-import voluptuous as vol
+import voluptuous as vol # type: ignore
 from homeassistant import config_entries, core, exceptions  # type: ignore
 from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PASSWORD, CONF_PORT, CONF_USERNAME  # type: ignore
 from homeassistant.core import HomeAssistant  # type: ignore
@@ -22,26 +22,59 @@ from .const import (
 )
 
 # Import API library components directly
-from .pywattbox_api_v2_4.client import WattBoxClient
-from .pywattbox_api_v2_4.exceptions import (
+
+# API wrappers
+from .pywattbox_800.client import WattBoxClient
+from .pywattbox_800.exceptions import (
     WattBoxConnectionError,
     WattBoxAuthenticationError,
     WattBoxError,
 )
+from .api_wrapper import PyWattBoxWrapper
 
 _LOGGER = logging.getLogger(__name__)
 
 # Data schema for user input
-STEP_USER_DATA_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_HOST): cv.string,
-        vol.Optional(CONF_PORT, default=DEFAULT_PORT): cv.port,
-        vol.Optional(CONF_USERNAME, default=DEFAULT_USER): cv.string,
-        vol.Optional(CONF_PASSWORD, default=DEFAULT_PASSWORD): cv.string,
-        vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
-        vol.Optional(CONF_ENABLE_POWER_SENSORS, default=DEFAULT_ENABLE_POWER_SENSORS): cv.boolean,
-    }
-)
+
+# Connection type dropdown and HTTP options
+CONNECTION_TYPES = {
+    "HTTP (80)": 80,
+    "Telnet (23)": 23,
+    "SSH (22)": 22,
+}
+HTTP_OPTIONS = [
+    "audible_alarm", "auto_reboot", "battery_health", "battery_test", "cloud_status",
+    "has_ups", "mute", "power_lost", "safe_voltage_status", "battery_charge",
+    "battery_load", "current_value", "est_run_time", "power_value", "voltage_value"
+]
+
+def build_user_schema(user_input=None):
+    connection_type = (user_input or {}).get("connection_type", "HTTP (80)")
+    port = CONNECTION_TYPES[connection_type]
+    if port == 80:
+        # HTTP: show HTTP options, hide power monitoring
+        schema = {
+            vol.Required(CONF_HOST, default=(user_input or {}).get(CONF_HOST, "")): cv.string,
+            vol.Required("connection_type", default=connection_type): vol.In(CONNECTION_TYPES),
+            vol.Optional(CONF_PORT, default=80): cv.port,
+            vol.Optional(CONF_USERNAME, default=(user_input or {}).get(CONF_USERNAME, DEFAULT_USER)): cv.string,
+            vol.Optional(CONF_PASSWORD, default=(user_input or {}).get(CONF_PASSWORD, DEFAULT_PASSWORD)): cv.string,
+            vol.Optional(CONF_NAME, default=(user_input or {}).get(CONF_NAME, DEFAULT_NAME)): cv.string,
+        }
+        for opt in HTTP_OPTIONS:
+            schema[vol.Optional(opt, default=True)] = cv.boolean
+        return vol.Schema(schema)
+    else:
+        # Telnet/SSH: show power monitoring
+        return vol.Schema({
+            vol.Required(CONF_HOST, default=(user_input or {}).get(CONF_HOST, "")): cv.string,
+            vol.Required("connection_type", default=connection_type): vol.In(CONNECTION_TYPES),
+            vol.Optional(CONF_PORT, default=port): cv.port,
+            vol.Optional(CONF_USERNAME, default=(user_input or {}).get(CONF_USERNAME, DEFAULT_USER)): cv.string,
+            vol.Optional(CONF_PASSWORD, default=(user_input or {}).get(CONF_PASSWORD, DEFAULT_PASSWORD)): cv.string,
+            vol.Optional(CONF_NAME, default=(user_input or {}).get(CONF_NAME, DEFAULT_NAME)): cv.string,
+            vol.Optional(CONF_ENABLE_POWER_SENSORS, default=(user_input or {}).get(CONF_ENABLE_POWER_SENSORS, DEFAULT_ENABLE_POWER_SENSORS)): cv.boolean,
+        })
 
 
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
@@ -49,35 +82,40 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
 
     Data has the keys from STEP_USER_DATA_SCHEMA with values provided by the user.
     """
-    # Create client with provided credentials
-    client = WattBoxClient(
-        host=data[CONF_HOST],
-        port=data[CONF_PORT],
-        username=data[CONF_USERNAME],
-        password=data[CONF_PASSWORD],
-        timeout=10.0,
-    )
+    # Select API based on port
+    port = data.get(CONF_PORT, 80)
+    if port == 80:
+        client = PyWattBoxWrapper(
+            data[CONF_HOST],
+            data.get(CONF_USERNAME, DEFAULT_USER),
+            data.get(CONF_PASSWORD, DEFAULT_PASSWORD),
+            port=port,
+        )
+    else:
+        client = WattBoxClient(
+            host=data[CONF_HOST],
+            port=port,
+            username=data.get(CONF_USERNAME, DEFAULT_USER),
+            password=data.get(CONF_PASSWORD, DEFAULT_PASSWORD),
+            timeout=10.0,
+        )
 
     try:
         # Test connection and get device info
         await hass.async_add_executor_job(client.connect)
-        
         # Get device information for validation and unique ID
         system_info = await hass.async_add_executor_job(client.get_system_info)
-        
         # Disconnect after testing
         await hass.async_add_executor_job(client.disconnect)
-        
         # Return info that you want to store in the config entry.
         return {
-            "title": f"WattBox {system_info.model}",
-            "model": system_info.model,
-            "firmware": system_info.firmware,
-            "hostname": system_info.hostname,
-            "service_tag": system_info.service_tag,
-            "outlet_count": system_info.outlet_count,
+            "title": f"WattBox {system_info['model'] if isinstance(system_info, dict) else system_info.model}",
+            "model": system_info['model'] if isinstance(system_info, dict) else system_info.model,
+            "firmware": system_info['firmware'] if isinstance(system_info, dict) else system_info.firmware,
+            "hostname": system_info['hostname'] if isinstance(system_info, dict) else system_info.hostname,
+            "service_tag": system_info.get('serial_number') if isinstance(system_info, dict) else getattr(system_info, 'service_tag', None),
+            "outlet_count": system_info['outlet_count'] if isinstance(system_info, dict) else system_info.outlet_count,
         }
-        
     except WattBoxConnectionError as err:
         _LOGGER.error("Connection error: %s", err)
         raise CannotConnect from err
@@ -98,7 +136,7 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
             pass
 
 
-class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class ConfigFlow(config_entries.ConfigFlow):
     """Handle a config flow for WattBox."""
 
     VERSION = 1
@@ -108,7 +146,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> FlowResult:
         """Handle the initial step."""
         errors: dict[str, str] = {}
-        
+
         if user_input is not None:
             try:
                 info = await validate_input(self.hass, user_input)
@@ -123,7 +161,6 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 # Check if already configured (by service tag)
                 await self.async_set_unique_id(info["service_tag"])
                 self._abort_if_unique_id_configured()
-                
                 # Create the config entry
                 return self.async_create_entry(
                     title=info["title"],
@@ -138,7 +175,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="user",
-            data_schema=STEP_USER_DATA_SCHEMA,
+            data_schema=build_user_schema(user_input),
             errors=errors,
             description_placeholders={
                 "default_username": DEFAULT_USER,
@@ -153,7 +190,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle reconfiguration of an existing entry."""
         entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
         errors: dict[str, str] = {}
-        
+
         if user_input is not None:
             try:
                 info = await validate_input(self.hass, user_input)
@@ -171,20 +208,12 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
         else:
             # Pre-fill with existing data
-            user_input = entry.data
+            user_input = entry.data if entry.data is not None else {}
 
+        # Use the same dynamic schema as the user step
         return self.async_show_form(
             step_id="reconfigure",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_HOST, default=user_input.get(CONF_HOST, "")): cv.string,
-                    vol.Optional(CONF_PORT, default=user_input.get(CONF_PORT, DEFAULT_PORT)): cv.port,
-                    vol.Optional(CONF_USERNAME, default=user_input.get(CONF_USERNAME, DEFAULT_USER)): cv.string,
-                    vol.Optional(CONF_PASSWORD, default=user_input.get(CONF_PASSWORD, DEFAULT_PASSWORD)): cv.string,
-                    vol.Optional(CONF_NAME, default=user_input.get(CONF_NAME, DEFAULT_NAME)): cv.string,
-                    vol.Optional(CONF_ENABLE_POWER_SENSORS, default=user_input.get(CONF_ENABLE_POWER_SENSORS, DEFAULT_ENABLE_POWER_SENSORS)): cv.boolean,
-                }
-            ),
+            data_schema=build_user_schema(user_input),
             errors=errors,
         )
 
