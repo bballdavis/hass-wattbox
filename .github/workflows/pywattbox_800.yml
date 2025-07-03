@@ -259,8 +259,8 @@ jobs:
           echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| Current Version | \`${{ steps.compare.outputs.current_version }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Latest Version | \`${{ steps.compare.outputs.latest_version }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Versions Match | ${{ steps.compare.outputs.versions_match == 'true' && '✅ Yes' || '❌ No' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Files Match | ${{ steps.compare-files.outputs.changes_detected == 'false' && '✅ Yes' || '❌ No' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Versions Match | $(if [[ \"${{ steps.compare.outputs.versions_match }}\" == \"true\" ]]; then echo '✅ Yes'; else echo '❌ No'; fi) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Files Match | $(if [[ \"${{ steps.compare-files.outputs.changes_detected }}\" == \"false\" ]]; then echo '✅ Yes'; else echo '❌ No'; fi) |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📝 Sync Actions" >> $GITHUB_STEP_SUMMARY
           cat sync_summary.txt >> $GITHUB_STEP_SUMMARY
@@ -273,6 +273,56 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Branch Sync Status" >> $GITHUB_STEP_SUMMARY
           echo "Both 'master' and 'beta' branches are being synced successfully." >> $GITHUB_STEP_SUMMARY
+      - name: Verify branch sync
+        shell: bash
+        run: |
+          set -e
+          echo "Verifying branch sync..."
+          # Checkout master branch
+          git -C hass-wattbox checkout master
+          MASTER_FILES=$(find hass-wattbox/custom_components/wattbox/pywattbox_800/ -type f | sort)
+          # Checkout beta branch
+          git -C hass-wattbox checkout beta
+          BETA_FILES=$(find hass-wattbox/custom_components/wattbox/pywattbox_800/ -type f | sort)
+          # Compare file lists
+          if [ "$MASTER_FILES" != "$BETA_FILES" ]; then
+            echo "❌ File lists differ between master and beta branches" | tee branch_sync_debug.txt
+            echo "branch_sync_match=false" >> $GITHUB_OUTPUT
+          else
+            echo "✅ File lists match between master and beta branches" | tee branch_sync_debug.txt
+            echo "branch_sync_match=true" >> $GITHUB_OUTPUT
+          fi
+          # Compare file contents
+          SYNC_MISMATCH=false
+          for file in $MASTER_FILES; do
+            BETA_FILE="${file/master/beta}"
+            if ! diff -w "$file" "$BETA_FILE" > /dev/null 2>&1; then
+              SYNC_MISMATCH=true
+              echo "❌ File content mismatch: $file vs $BETA_FILE" >> branch_sync_debug.txt
+            fi
+          done
+          if [ "$SYNC_MISMATCH" = true ]; then
+            echo "❌ File contents differ between master and beta branches" | tee -a branch_sync_debug.txt
+            echo "branch_sync_match=false" >> $GITHUB_OUTPUT
+          else
+            echo "✅ File contents match between master and beta branches" | tee -a branch_sync_debug.txt
+            echo "branch_sync_match=true" >> $GITHUB_OUTPUT
+          fi
+          # Save debug output for summary
+          echo "--- Branch Sync Debug ---" > branch_sync_debug.txt
+          echo "Master files:" >> branch_sync_debug.txt
+          echo "$MASTER_FILES" >> branch_sync_debug.txt
+          echo "Beta files:" >> branch_sync_debug.txt
+          echo "$BETA_FILES" >> branch_sync_debug.txt
+          echo "--- End of Branch Sync Debug ---" >> branch_sync_debug.txt
+      - name: Update summary with branch sync status
+        shell: bash
+        run: |
+          echo "#### Debug Output: Branch Sync" >> $GITHUB_STEP_SUMMARY
+          cat branch_sync_debug.txt >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Branch Sync Verification" >> $GITHUB_STEP_SUMMARY
+          echo "Branch sync status: ${{ steps.verify-branch-sync.outputs.branch_sync_match == 'true' && '✅ Synced' || '❌ Not Synced' }}" >> $GITHUB_STEP_SUMMARY
       - name: Create issue if outdated
         if: steps.compare.outputs.versions_match == 'false' || steps.compare-files.outputs.changes_detected == 'true'
         uses: actions/github-script@v7
