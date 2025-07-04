@@ -195,30 +195,34 @@ class ConfigFlow(config_entries.ConfigFlow):
         if user_input is not None:
             # Merge connection type into user_input for validation
             user_input["connection_type"] = connection_type
-            # Use the port the user entered, or the default for the connection type
             user_input[CONF_PORT] = user_input.get(CONF_PORT, port)
-            try:
-                info = await validate_input(self.hass, user_input)
-            except CannotConnect:
-                errors["base"] = "cannot_connect"
-            except InvalidAuth:
-                errors["base"] = "invalid_auth"
-            except Exception:
-                _LOGGER.exception("Unexpected exception")
-                errors["base"] = "unknown"
+            # --- Main device name uniqueness validation ---
+            base_name = user_input.get(CONF_NAME, DEFAULT_NAME)
+            if not self._is_name_unique(base_name):
+                errors[CONF_NAME] = "name_exists"
             else:
-                await self.async_set_unique_id(info["service_tag"])
-                self._abort_if_unique_id_configured()
-                return self.async_create_entry(
-                    title=info["title"],
-                    data=user_input,
-                    description_placeholders={
-                        "model": info["model"],
-                        "firmware": info["firmware"],
-                        "hostname": info["hostname"],
-                        "outlet_count": str(info["outlet_count"]),
-                    },
-                )
+                try:
+                    info = await validate_input(self.hass, user_input)
+                except CannotConnect:
+                    errors["base"] = "cannot_connect"
+                except InvalidAuth:
+                    errors["base"] = "invalid_auth"
+                except Exception:
+                    _LOGGER.exception("Unexpected exception")
+                    errors["base"] = "unknown"
+                else:
+                    await self.async_set_unique_id(info["service_tag"])
+                    self._abort_if_unique_id_configured()
+                    return self.async_create_entry(
+                        title=info["title"],
+                        data=user_input,
+                        description_placeholders={
+                            "model": info["model"],
+                            "firmware": info["firmware"],
+                            "hostname": info["hostname"],
+                            "outlet_count": str(info["outlet_count"]),
+                        },
+                    )
         # Use translation_key for step 2, matching the previous version of stage 1
         return self.async_show_form(
             step_id="connection_details",
@@ -228,7 +232,7 @@ class ConfigFlow(config_entries.ConfigFlow):
                 "default_username": DEFAULT_USER,
                 "default_password": DEFAULT_PASSWORD,
                 "default_port": str(port),
-            }
+            },
         )
 
     async def async_step_reconfigure(
@@ -260,20 +264,25 @@ class ConfigFlow(config_entries.ConfigFlow):
             # Always use the original connection type
             user_input["connection_type"] = connection_type
             user_input[CONF_PORT] = user_input.get(CONF_PORT, port)
-            try:
-                info = await validate_input(self.hass, user_input)
-            except CannotConnect:
-                errors["base"] = "cannot_connect"
-            except InvalidAuth:
-                errors["base"] = "invalid_auth"
-            except Exception:  # pylint: disable=broad-except
-                _LOGGER.exception("Unexpected exception")
-                errors["base"] = "unknown"
+            base_name = user_input.get(CONF_NAME, DEFAULT_NAME)
+            # Skip current entry when checking for uniqueness
+            if not self._is_name_unique(base_name, skip_entry_id=entry.entry_id):
+                errors[CONF_NAME] = "name_exists"
             else:
-                # Update the config entry
-                return self.async_update_reload_and_abort(
-                    entry, data=user_input, reason="reconfigure_successful"
-                )
+                try:
+                    info = await validate_input(self.hass, user_input)
+                except CannotConnect:
+                    errors["base"] = "cannot_connect"
+                except InvalidAuth:
+                    errors["base"] = "invalid_auth"
+                except Exception:  # pylint: disable=broad-except
+                    _LOGGER.exception("Unexpected exception")
+                    errors["base"] = "unknown"
+                else:
+                    # Update the config entry
+                    return self.async_update_reload_and_abort(
+                        entry, data=user_input, reason="reconfigure_successful"
+                    )
         else:
             # Pre-fill with existing data
             user_input = entry.data if entry.data is not None else {}
@@ -283,6 +292,16 @@ class ConfigFlow(config_entries.ConfigFlow):
             data_schema=vol.Schema(schema),
             errors=errors,
         )
+
+    def _is_name_unique(self, name: str, skip_entry_id: str | None = None) -> bool:
+        """Check if the given name is unique among all config entries' CONF_NAME, optionally skipping one entry by id."""
+        for entry in self._async_current_entries():
+            if skip_entry_id is not None and hasattr(entry, 'entry_id') and entry.entry_id == skip_entry_id:
+                continue
+            entry_name = entry.data.get(CONF_NAME, DEFAULT_NAME)
+            if entry_name == name:
+                return False
+        return True
 
 
 class CannotConnect(exceptions.HomeAssistantError):

@@ -145,6 +145,44 @@ OUTLET_SENSOR_TYPES: Final[Dict[str, _SensorTypeDict]] = {
     },
 }
 
+def canonicalize_name(name: str) -> str:
+    """Convert a name to a canonical entity/device id (lowercase, underscores, no spaces)."""
+    return name.replace(" ", "_").replace("-", "_").lower()
+
+def friendly_name(main_device: str, outlet_index: int = None, sensor_type: str = None) -> str:
+    """Generate a friendly name for an entity."""
+    base = main_device.replace("_", " ").title()
+    if outlet_index is not None and sensor_type is not None:
+        return f"{base} Outlet {outlet_index} {sensor_type.title()}"
+    elif outlet_index is not None:
+        return f"{base} Outlet {outlet_index}"
+    elif sensor_type is not None:
+        return f"{base} {sensor_type.title()}"
+    return base
+
+def get_outlet_device_info_canonical(main_device: str, outlet_index: int, wattbox_system_info=None, device_name: str = None):
+    """Get device info for an outlet device with canonical name, allowing override of device name."""
+    canonical = canonicalize_name(main_device)
+    return {
+        "identifiers": {(DOMAIN, f"{canonical}_outlet_{outlet_index}")},
+        "name": device_name if device_name is not None else friendly_name(main_device, outlet_index),
+        "manufacturer": "SnapAV",
+        "model": f"WattBox Outlet {outlet_index}",
+        "via_device": (DOMAIN, canonical),
+        "sw_version": getattr(wattbox_system_info, "firmware", "Unknown") if wattbox_system_info else "Unknown",
+    }
+
+def get_wattbox_device_info_canonical(main_device: str, system_info=None):
+    """Get device info for the main WattBox device with canonical name."""
+    canonical = canonicalize_name(main_device)
+    return {
+        "identifiers": {(DOMAIN, canonical)},
+        "name": friendly_name(main_device),
+        "manufacturer": "SnapAV",
+        "model": getattr(system_info, "model", "Unknown") if system_info else "Unknown",
+        "sw_version": getattr(system_info, "firmware", "Unknown") if system_info else "Unknown",
+    }
+
 def get_outlet_device_info(host: str, outlet_index: int, outlet_name: str, wattbox_system_info=None):
     """Get device info for an outlet device."""
     return {
@@ -239,3 +277,9 @@ def extract_outlet_count_from_model_name(model_name: str) -> int:
     
     # Default fallback for unknown models
     return 8
+
+# Utility to build a unique entity id for a given integration instance
+
+def unique_wattbox_entity_id(entry_id: str, *parts: str) -> str:
+    """Generate a unique entity id for a WattBox entity using the config entry id and other parts."""
+    return "_".join([entry_id] + [canonicalize_name(p) for p in parts if p])

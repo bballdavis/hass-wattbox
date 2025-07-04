@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import httpx
@@ -39,8 +40,16 @@ class HttpWattBox(BaseWattBox):
         )
         logger.debug(f"    Status: {response.status_code}")
         response.raise_for_status()
-        self.parse_initial(response)
-        self.parse_update(response)
+        await self.async_parse_initial(response)
+        await self.async_parse_update(response)
+
+    async def async_parse_initial(self, response: httpx.Response) -> None:
+        logger.debug("Async Parse Initial (threaded)")
+        await asyncio.to_thread(self.parse_initial, response)
+
+    async def async_parse_update(self, response: httpx.Response) -> None:
+        logger.debug("Async Parse Update (threaded)")
+        await asyncio.to_thread(self.parse_update, response)
 
     # Parse Initial Data
     def parse_initial(self, response: httpx.Response) -> None:
@@ -92,7 +101,7 @@ class HttpWattBox(BaseWattBox):
         )
         logger.debug(f"    Status: {response.status_code}")
         response.raise_for_status()
-        self.parse_update(response)
+        await self.async_parse_update(response)
 
     # Parse Update Data
     def parse_update(self, response: httpx.Response) -> None:
