@@ -67,13 +67,22 @@ async def async_setup_entry(
     used_device_names.add(main_device_name)
 
     # System sensors (always create these)
-    entities.extend([
-        WattBoxSystemSensor(coordinator, canonical_main_device, "firmware", "Firmware", entry_id=entry_id),
-        WattBoxSystemSensor(coordinator, canonical_main_device, "model", "Model", entry_id=entry_id),
-        WattBoxSystemSensor(coordinator, canonical_main_device, "hostname", "Hostname", entry_id=entry_id),
-        WattBoxSystemSensor(coordinator, canonical_main_device, "service_tag", "Service Tag", entry_id=entry_id),
-        WattBoxSystemSensor(coordinator, canonical_main_device, "outlet_count", "Outlet Count", entry_id=entry_id),
-    ])
+    # Only add firmware sensor for non-HTTP API
+    if not is_http_api:
+        entities.extend([
+            WattBoxSystemSensor(coordinator, canonical_main_device, "firmware", "Firmware", entry_id=entry_id),
+            WattBoxSystemSensor(coordinator, canonical_main_device, "model", "Model", entry_id=entry_id),
+            WattBoxSystemSensor(coordinator, canonical_main_device, "hostname", "Hostname", entry_id=entry_id),
+            WattBoxSystemSensor(coordinator, canonical_main_device, "service_tag", "Service Tag", entry_id=entry_id),
+            WattBoxSystemSensor(coordinator, canonical_main_device, "outlet_count", "Outlet Count", entry_id=entry_id),
+        ])
+    else:
+        entities.extend([
+            WattBoxSystemSensor(coordinator, canonical_main_device, "model", "Model", entry_id=entry_id),
+            WattBoxSystemSensor(coordinator, canonical_main_device, "hostname", "Hostname", entry_id=entry_id),
+            WattBoxSystemSensor(coordinator, canonical_main_device, "service_tag", "Service Tag", entry_id=entry_id),
+            WattBoxSystemSensor(coordinator, canonical_main_device, "outlet_count", "Outlet Count", entry_id=entry_id),
+        ])
 
     # Power/UPS sensors (only if available and enabled)
     if not is_http_api:
@@ -87,8 +96,8 @@ async def async_setup_entry(
         if coordinator.data and coordinator.data.get("ups_connected"):
             entities.extend([
                 WattBoxUPSSensor(coordinator, "battery_level", "UPS Battery Level", PERCENTAGE),
-                WattBoxUPSSensor(coordinator, "runtime_remaining", "UPS Runtime Remaining"),
-                WattBoxUPSSensor(coordinator, "status", "UPS Status"),
+                WattBoxUPSSensor(coordinator, "runtime_remaining", "UPS Runtime Remaining", name="UPS Runtime Remaining"),
+                WattBoxUPSSensor(coordinator, "status", "UPS Status", name="UPS Status"),
             ])
     else:
         # HTTP API: Only create power sensors if present in wattbox_info.xml
@@ -106,31 +115,28 @@ async def async_setup_entry(
             if getattr(ups, "battery_charge", None) is not None:
                 entities.append(WattBoxUPSSensor(coordinator, "battery_level", "UPS Battery Level", PERCENTAGE))
             if getattr(ups, "battery_runtime", None) is not None:
-                entities.append(WattBoxUPSSensor(coordinator, "runtime_remaining", "UPS Runtime Remaining"))
+                entities.append(WattBoxUPSSensor(coordinator, "runtime_remaining", "UPS Runtime Remaining", name="UPS Runtime Remaining"))
             if getattr(ups, "battery_health", None) is not None:
-                entities.append(WattBoxUPSSensor(coordinator, "status", "UPS Status"))
+                entities.append(WattBoxUPSSensor(coordinator, "status", "UPS Status", name="UPS Status"))
 
     # Outlet sensors
     if coordinator.data and coordinator.data.get("outlets"):
         outlet_count = len(coordinator.data['outlets'])
         _LOGGER.info(f"Creating sensors for {outlet_count} outlets")
         for outlet in coordinator.data["outlets"]:
-            if is_http_api:
-                sensor_name = friendly_name(main_device_name, outlet.index, "Status")
-                entities.append(WattBoxOutletSensor(
-                    coordinator, canonical_main_device, outlet.index, outlet.name, "status", sensor_name, None, None, entry_id=entry_id
-                ))
+            # Only create power/current/voltage sensors for Telnet (not HTTP) if enabled
+            if not is_http_api and enable_power_sensors:
+                _LOGGER.info(f"Creating power sensors for outlet {outlet.index} ({outlet.name})")
+                for sensor_type, sensor_config in OUTLET_SENSOR_TYPES.items():
+                    sensor_name = friendly_name(main_device_name, outlet.index, sensor_type)
+                    entities.append(WattBoxOutletSensor(
+                        coordinator, canonical_main_device, outlet.index, outlet.name, sensor_type, 
+                        sensor_name, sensor_config["unit"], sensor_config["icon"], entry_id=str(entry_id)
+                    ))
+            elif is_http_api:
+                _LOGGER.info(f"Skipping power sensors for HTTP/700 series outlet {outlet.index} ({outlet.name})")
             else:
-                if enable_power_sensors:
-                    _LOGGER.info(f"Creating power sensors for outlet {outlet.index} ({outlet.name})")
-                    for sensor_type, sensor_config in OUTLET_SENSOR_TYPES.items():
-                        sensor_name = friendly_name(main_device_name, outlet.index, sensor_type)
-                        entities.append(WattBoxOutletSensor(
-                            coordinator, canonical_main_device, outlet.index, outlet.name, sensor_type, 
-                            sensor_name, sensor_config["unit"], sensor_config["icon"], entry_id=entry_id
-                        ))
-                else:
-                    _LOGGER.info(f"Power sensors disabled, skipping outlet {outlet.index}")
+                _LOGGER.info(f"Power sensors disabled, skipping outlet {outlet.index}")
 
     _LOGGER.info(f"Successfully created {len(entities)} WattBox sensors")
     async_add_entities(entities)
@@ -145,8 +151,8 @@ class WattBoxBaseSensor(CoordinatorEntity, SensorEntity):
         self._main_device = main_device
         self._sensor_type = sensor_type
         self._attr_name = name
-        self._entry_id = entry_id
-        self._attr_unique_id = unique_wattbox_entity_id(entry_id, main_device, sensor_type)
+        self._entry_id = str(entry_id) if entry_id is not None else ""
+        self._attr_unique_id = unique_wattbox_entity_id(self._entry_id, main_device, sensor_type)
         if unit:
             self._attr_native_unit_of_measurement = unit
 
@@ -242,8 +248,8 @@ class WattBoxOutletSensor(CoordinatorEntity, SensorEntity):
         self._outlet_index = outlet_index
         self._outlet_name = outlet_name
         self._sensor_type = sensor_type
-        self._entry_id = entry_id
-        self._attr_unique_id = unique_wattbox_entity_id(entry_id, main_device, f"outlet_{outlet_index}", sensor_type)
+        self._entry_id = str(entry_id) if entry_id is not None else ""
+        self._attr_unique_id = unique_wattbox_entity_id(self._entry_id, main_device, f"outlet_{outlet_index}", sensor_type)
         # Compose friendly name as "<Main Device> <Outlet Name> <Sensor Type>"
         self._attr_name = f"{main_device.replace('_', ' ').title()} {outlet_name} {sensor_type.title()}"
         if unit:
