@@ -12,21 +12,51 @@ from .pywattbox.http_wattbox import HttpWattBox
 class PyWattBoxWrapper:
     def __init__(self, host, username, password, port=80, **kwargs):
         self._client = HttpWattBox(host, username, password, port)
+        # Add logging before getting initial data
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"PyWattBoxWrapper: Initializing HTTP client for {host}:{port}")
         self._client.get_initial()
+        logger.info(f"PyWattBoxWrapper: Initial data retrieved. Number of outlets: {self._client.number_outlets}")
+        logger.info(f"PyWattBoxWrapper: Hardware version: {self._client.hardware_version}")
+        logger.info(f"PyWattBoxWrapper: Serial number: {self._client.serial_number}")
+        logger.info(f"PyWattBoxWrapper: Hostname: {self._client.hostname}")
+        if hasattr(self._client, 'outlets') and self._client.outlets:
+            logger.info(f"PyWattBoxWrapper: Outlets dict keys: {list(self._client.outlets.keys())}")
+            for outlet_id, outlet in self._client.outlets.items():
+                logger.info(f"PyWattBoxWrapper: Outlet {outlet_id}: name='{outlet.name}', status={outlet.status}, method={getattr(outlet, 'method', 'N/A')}")
+        else:
+            logger.warning("PyWattBoxWrapper: No outlets found in client!")
 
     def get_device_info(self, refresh=False, include_outlet_power=True):
         from .pywattbox_800.models import WattBoxDevice, OutletInfo, SystemInfo, PowerStatus, UPSStatus
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        logger.info(f"PyWattBoxWrapper.get_device_info: refresh={refresh}, include_outlet_power={include_outlet_power}")
+        
+        if refresh:
+            logger.info("PyWattBoxWrapper.get_device_info: Refreshing data from device")
+            self._client.update()
+            
+        logger.info(f"PyWattBoxWrapper.get_device_info: Client outlets count: {len(self._client.outlets) if hasattr(self._client, 'outlets') else 'N/A'}")
+        logger.info(f"PyWattBoxWrapper.get_device_info: Client number_outlets: {getattr(self._client, 'number_outlets', 'N/A')}")
 
-        outlets = [
-            OutletInfo(
-                index=o.index,
-                name=o.name or "Unknown Outlet",
-                status=o.status or False,
-                power_watts=o.power_value,
-                current_amps=o.current_value,
-                voltage_volts=o.voltage_value,
-            ) for o in self._client.outlets.values()
-        ]
+        outlets = []
+        if hasattr(self._client, 'outlets') and self._client.outlets:
+            for o in self._client.outlets.values():
+                outlet_info = OutletInfo(
+                    index=o.index,
+                    name=o.name or "Unknown Outlet",
+                    status=o.status or False,
+                    power_watts=o.power_value,
+                    current_amps=o.current_value,
+                    voltage_volts=o.voltage_value,
+                )
+                outlets.append(outlet_info)
+                logger.info(f"PyWattBoxWrapper.get_device_info: Created OutletInfo for outlet {o.index}: name='{outlet_info.name}', status={outlet_info.status}")
+        else:
+            logger.warning("PyWattBoxWrapper.get_device_info: No outlets available in client")
 
         system_info = SystemInfo(
             model=self._client.hardware_version or "Unknown Model",
@@ -35,6 +65,8 @@ class PyWattBoxWrapper:
             service_tag=self._client.serial_number or "Unknown Serial",
             outlet_count=self._client.number_outlets or 0,
         )
+        
+        logger.info(f"PyWattBoxWrapper.get_device_info: SystemInfo - model={system_info.model}, outlet_count={system_info.outlet_count}")
 
         power_status = PowerStatus(
             power_watts=self._client.power_value,
@@ -53,7 +85,7 @@ class PyWattBoxWrapper:
             alarm_muted=bool(getattr(self._client, 'mute', False)),
         ) if self.get_ups_connection_status() else None
 
-        return WattBoxDevice(
+        device = WattBoxDevice(
             system_info=system_info,
             outlets=outlets,
             power_status=power_status,
@@ -61,6 +93,9 @@ class PyWattBoxWrapper:
             ups_connected=self.get_ups_connection_status(),
             auto_reboot_enabled=self._client.auto_reboot,
         )
+        
+        logger.info(f"PyWattBoxWrapper.get_device_info: Returning device with {len(outlets)} outlets")
+        return device
 
     def get_system_info(self):
         # Create a simple object that mimics SystemInfo structure
@@ -139,12 +174,22 @@ class PyWattBoxWrapper:
         }
 
     def get_outlet_power_status(self, outlet):
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"PyWattBoxWrapper.get_outlet_power_status: Requesting power status for outlet {outlet}")
+        
+        if outlet not in self._client.outlets:
+            logger.warning(f"PyWattBoxWrapper.get_outlet_power_status: Outlet {outlet} not found in client outlets")
+            return None
+            
         o = self._client.outlets[outlet]
-        return {
+        result = {
             'power_watts': o.power_value,
             'current_amps': o.current_value,
             'voltage_volts': o.voltage_value,
         }
+        logger.info(f"PyWattBoxWrapper.get_outlet_power_status: Outlet {outlet} power data: {result}")
+        return result
 
     def get_all_outlets_power_data(self, command_timeout=5.0):
         return {
@@ -178,7 +223,15 @@ class PyWattBoxWrapper:
         raise NotImplementedError("Auto reboot configuration is not supported via HTTP API.")
 
     def connect(self):
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info("PyWattBoxWrapper.connect: Refreshing data from device")
         self._client.get_initial()
+        logger.info(f"PyWattBoxWrapper.connect: After refresh - Number of outlets: {self._client.number_outlets}")
+        if hasattr(self._client, 'outlets') and self._client.outlets:
+            logger.info(f"PyWattBoxWrapper.connect: Available outlet indices: {list(self._client.outlets.keys())}")
+        else:
+            logger.warning("PyWattBoxWrapper.connect: No outlets available after refresh!")
 
     def disconnect(self):
         pass

@@ -53,34 +53,68 @@ class HttpWattBox(BaseWattBox):
 
     # Parse Initial Data
     def parse_initial(self, response: httpx.Response) -> None:
-        logger.debug("Parse Initial")
+        logger.info("Parse Initial - Raw XML Response:")
+        logger.info(f"Response Content: {response.content.decode('utf-8', errors='replace')}")
+        
         # Parse with BeautifulSoup
         soup = BeautifulSoup(response.content, "xml")
-        logger.debug(soup)
+        logger.info(f"Parsed XML: {soup}")
 
         # Set these values once, should never change
         if soup.hardware_version is not None:
             self.hardware_version = soup.hardware_version.text
+            logger.info(f"Hardware version found: {self.hardware_version}")
+        else:
+            logger.warning("No hardware_version found in XML")
+            
         if soup.hasUPS is not None:
             self.has_ups = soup.hasUPS.text == "1"
+            logger.info(f"UPS status found: {self.has_ups}")
+        else:
+            logger.info("No hasUPS found in XML")
+            
         if soup.host_name is not None:
             self.hostname = soup.host_name.text
+            logger.info(f"Hostname found: {self.hostname}")
+        else:
+            logger.warning("No host_name found in XML")
+            
         if soup.serial_number is not None:
             self.serial_number = soup.serial_number.text
+            logger.info(f"Serial number found: {self.serial_number}")
+        else:
+            logger.warning("No serial_number found in XML")
 
         # Some hardware versions have plugs that are always on, so using the
         # hardware version doesn't work well. Just split the outlets.
         # Additional logic shouldn't ever get used, but there just in case
         if soup.outlet_status is not None:
-            self.number_outlets = len(soup.outlet_status.text.split(","))
+            outlet_status_text = soup.outlet_status.text
+            logger.info(f"Found outlet_status: '{outlet_status_text}'")
+            if outlet_status_text and outlet_status_text.strip():
+                outlet_statuses = outlet_status_text.split(",")
+                self.number_outlets = len(outlet_statuses)
+                logger.info(f"Parsed {self.number_outlets} outlets from outlet_status: {outlet_statuses}")
+            else:
+                logger.warning("outlet_status field is empty or whitespace only")
+                self.number_outlets = 0
         elif self.hardware_version is not None:
-            self.number_outlets = int(self.hardware_version.split("-")[-1])
+            try:
+                self.number_outlets = int(self.hardware_version.split("-")[-1])
+                logger.info(f"Extracted {self.number_outlets} outlets from hardware version: {self.hardware_version}")
+            except (ValueError, IndexError):
+                logger.warning(f"Could not extract outlet count from hardware version: {self.hardware_version}")
+                self.number_outlets = 0
         else:
+            logger.warning("No outlet_status or hardware_version found - setting outlet count to 0")
             self.number_outlets = 0
+
+        logger.info(f"Final outlet count: {self.number_outlets}")
 
         # Initialize outlets
         self.outlets = {i: Outlet(i, self) for i in range(1, self.number_outlets + 1)}
         self.master_outlet = MasterSwitch(self)
+        logger.info(f"Initialized {len(self.outlets)} outlets")
 
     # Get Update Data
     def update(self) -> None:
@@ -105,10 +139,12 @@ class HttpWattBox(BaseWattBox):
 
     # Parse Update Data
     def parse_update(self, response: httpx.Response) -> None:
-        logger.debug("Parse Update")
+        logger.info("Parse Update - Raw XML Response:")
+        logger.info(f"Response Content: {response.content.decode('utf-8', errors='replace')}")
+        
         # Parse with BeautifulSoup
         soup = BeautifulSoup(response.content, "xml")
-        logger.debug(soup)
+        logger.info(f"Parsed XML for update: {soup}")
 
         # Status values
         if soup.audible_alarm is not None:
@@ -127,11 +163,14 @@ class HttpWattBox(BaseWattBox):
         # Power values
         if soup.power_value is not None:
             self.power_value = int(soup.power_value.text)
+            logger.info(f"Power value: {self.power_value}")
         # Api returns these two as tenths
         if soup.current_value is not None:
             self.current_value = int(soup.current_value.text) / 10
+            logger.info(f"Current value: {self.current_value}")
         if soup.voltage_value is not None:
             self.voltage_value = int(soup.voltage_value.text) / 10
+            logger.info(f"Voltage value: {self.voltage_value}")
 
         # Battery values
         if self.has_ups:
@@ -146,18 +185,42 @@ class HttpWattBox(BaseWattBox):
             if soup.est_run_time is not None:
                 self.est_run_time = int(soup.est_run_time.text)
 
-        # Outlets
+        # Outlets - Check for both outlet_method and outlet_mode
+        outlet_method_found = False
         if soup.outlet_method is not None:
+            logger.info(f"Found outlet_method: {soup.outlet_method.text}")
             for i, s in enumerate(soup.outlet_method.text.split(","), start=1):
-                self.outlets[i].method = s == "1"
+                if i in self.outlets:
+                    self.outlets[i].method = s == "1"
+                    logger.info(f"Outlet {i} method set to: {self.outlets[i].method}")
+            outlet_method_found = True
+        elif soup.outlet_mode is not None:
+            logger.info(f"Found outlet_mode (instead of outlet_method): {soup.outlet_mode.text}")
+            for i, s in enumerate(soup.outlet_mode.text.split(","), start=1):
+                if i in self.outlets:
+                    self.outlets[i].method = s == "1"
+                    logger.info(f"Outlet {i} method set to: {self.outlets[i].method}")
+            outlet_method_found = True
+        else:
+            logger.warning("No outlet_method or outlet_mode found in XML")
 
         if soup.outlet_name is not None:
+            logger.info(f"Found outlet_name: {soup.outlet_name.text}")
             for i, s in enumerate(soup.outlet_name.text.split(","), start=1):
-                self.outlets[i].name = s
+                if i in self.outlets:
+                    self.outlets[i].name = s
+                    logger.info(f"Outlet {i} name set to: {self.outlets[i].name}")
+        else:
+            logger.warning("No outlet_name found in XML")
 
         if soup.outlet_status is not None:
+            logger.info(f"Found outlet_status: {soup.outlet_status.text}")
             for i, s in enumerate(soup.outlet_status.text.split(","), start=1):
-                self.outlets[i].status = s == "1"
+                if i in self.outlets:
+                    self.outlets[i].status = s == "1"
+                    logger.info(f"Outlet {i} status set to: {self.outlets[i].status}")
+        else:
+            logger.warning("No outlet_status found in XML")
 
         # Master switch is on if all those outlets are on
         if self.master_outlet is not None:
@@ -166,6 +229,9 @@ class HttpWattBox(BaseWattBox):
                 outlet.status for outlet in self.outlets.values() if outlet.method
             ]
             self.master_outlet.status = all(statuses)
+            logger.info(f"Master outlet status calculated as: {self.master_outlet.status}")
+        
+        logger.info(f"Parse update complete. Total outlets: {len(self.outlets)}")
 
     # Send command
     def send_command(self, outlet: int, command: Commands) -> None:

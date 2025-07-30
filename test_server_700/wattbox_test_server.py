@@ -89,6 +89,7 @@ class WattBoxHandler(BaseHTTPRequestHandler):
         # Example values for other fields
         host_name = "TestWattBox700"
         hardware_version = "WB-700-IPV-12"
+        firmware_version = "2.0.0"
         serial_number = "1234567890"
         site_ip = ",".join([f"192.168.1.{i+1}" for i in range(16)])
         connect_status = ",".join(["10"]*16)
@@ -96,6 +97,7 @@ class WattBoxHandler(BaseHTTPRequestHandler):
         outlet_names = ",".join(self.outlet_names)
         outlet_status = ",".join(str(x) for x in self.outlet_status)
         outlet_mode = ",".join(["1"]*NUM_OUTLETS)
+        outlet_method = ",".join(["1"]*NUM_OUTLETS)  # Add both for compatibility
         led_status = "1,1,1"
         safe_voltage_status = "1"
         voltage_value = "1200"
@@ -105,6 +107,7 @@ class WattBoxHandler(BaseHTTPRequestHandler):
 <request>
   <host_name>{host_name}</host_name>
   <hardware_version>{hardware_version}</hardware_version>
+  <firmware_version>{firmware_version}</firmware_version>
   <serial_number>{serial_number}</serial_number>
   <site_ip>{site_ip}</site_ip>
   <connect_status>{connect_status}</connect_status>
@@ -113,6 +116,7 @@ class WattBoxHandler(BaseHTTPRequestHandler):
   <outlet_name>{outlet_names}</outlet_name>
   <outlet_status>{outlet_status}</outlet_status>
   <outlet_mode>{outlet_mode}</outlet_mode>
+  <outlet_method>{outlet_method}</outlet_method>
   <led_status>{led_status}</led_status>
   <safe_voltage_status>{safe_voltage_status}</safe_voltage_status>
   <voltage_value>{voltage_value}</voltage_value>
