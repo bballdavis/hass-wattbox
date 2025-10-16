@@ -12,7 +12,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback  # type: i
 from homeassistant.helpers.update_coordinator import CoordinatorEntity  # type: ignore
 from homeassistant.exceptions import ServiceValidationError  # type: ignore
 
-from .const import DOMAIN, get_outlet_device_info, get_wattbox_device_info
+from .const import DOMAIN, get_outlet_device_info, get_wattbox_device_info, canonicalize_name, friendly_name, get_outlet_device_info_canonical, get_wattbox_device_info_canonical, unique_wattbox_entity_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,25 +26,40 @@ async def async_setup_entry(
     coordinator = hass.data[DOMAIN][entry.entry_id]
     
     entities = []
+    entry_id = entry.entry_id
     
-    # Master switch (remains on main WattBox device)
-    entities.append(WattBoxMasterSwitch(coordinator))
-    
-    # Individual outlet switches (now on separate outlet devices)
+    # --- Dynamic entity setup based on API type ---
+    # For HTTP API (pywattbox), only create switch per outlet, using outlet_status for outlet count.
+    # For v2.4 API, retain existing dynamic logic.
+    # See: custom_components/wattbox/pywattbox/wattbox_api_v2.0.md for HTTP API fields
+    # See: custom_components/wattbox/pywattbox_800/README.md for v2.4 API fields
+
+    client = getattr(coordinator, "client", None)
+    is_http_api = client and client.__class__.__name__ in ("PyWattBoxWrapper", "HttpWattBox")
+
+    main_device_name = entry.data.get("name") or entry.title or "wattbox"
+    canonical_main_device = canonicalize_name(main_device_name)
+
+    # Master switch (system device)
+    entities.append(WattBoxMasterSwitch(coordinator, canonical_main_device, friendly_name(main_device_name, sensor_type="Master Switch"), entry_id=entry_id))
+
+    # Individual outlet switches
     if coordinator.data and coordinator.data.get("outlets"):
         for outlet in coordinator.data["outlets"]:
-            entities.append(WattBoxOutletSwitch(coordinator, outlet.index, outlet.name))
-    
+            switch_name = friendly_name(main_device_name, outlet.index, "Switch")
+            entities.append(WattBoxOutletSwitch(coordinator, canonical_main_device, outlet.index, outlet.name, switch_name, entry_id=entry_id))
     async_add_entities(entities)
 
 
 class WattBoxBaseSwitch(CoordinatorEntity, SwitchEntity):
     """Base class for WattBox switches."""
 
-    def __init__(self, coordinator, unique_id: str, name: str):
+    def __init__(self, coordinator, main_device: str, unique_id: str, name: str, entry_id: Optional[str] = None):
         """Initialize the switch."""
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.client.host}_{unique_id}"
+        self._main_device = main_device
+        self._entry_id = entry_id
+        self._attr_unique_id = unique_wattbox_entity_id(entry_id, main_device, unique_id)
         self._attr_name = name
         self._attr_device_class = SwitchDeviceClass.OUTLET
 
@@ -52,19 +67,22 @@ class WattBoxBaseSwitch(CoordinatorEntity, SwitchEntity):
     def device_info(self):
         """Return device information for main WattBox device."""
         system_info = self.coordinator.data.get("system_info") if self.coordinator.data else None
-        return get_wattbox_device_info(self.coordinator.client.host, system_info)
+        return get_wattbox_device_info_canonical(self._main_device, system_info)
 
 
 class WattBoxOutletSwitch(CoordinatorEntity, SwitchEntity):
     """WattBox outlet switch."""
 
-    def __init__(self, coordinator, outlet_index: int, outlet_name: str):
+    def __init__(self, coordinator, main_device: str, outlet_index: int, outlet_name: str, name: str, entry_id: Optional[str] = None):
         """Initialize the outlet switch."""
         super().__init__(coordinator)
+        self._main_device = main_device
         self._outlet_index = outlet_index
         self._outlet_name = outlet_name
-        self._attr_unique_id = f"{coordinator.client.host}_outlet_{outlet_index}_switch"
-        self._attr_name = outlet_name  # Use the API outlet name as the friendly name
+        self._entry_id = entry_id
+        self._attr_unique_id = unique_wattbox_entity_id(entry_id, main_device, f"outlet_{outlet_index}", "switch")
+        # Compose friendly name as "<Main Device> <Outlet Name> Switch"
+        self._attr_name = f"{main_device.replace('_', ' ').title()} {outlet_name} Switch"
         self._attr_device_class = SwitchDeviceClass.OUTLET
         
         # Cooldown mechanism
@@ -74,14 +92,10 @@ class WattBoxOutletSwitch(CoordinatorEntity, SwitchEntity):
 
     @property
     def device_info(self):
-        """Return device information for this outlet device."""
+        """Return device information for this outlet device, using the main device and outlet name as the device name."""
         system_info = self.coordinator.data.get("system_info") if self.coordinator.data else None
-        return get_outlet_device_info(
-            self.coordinator.client.host, 
-            self._outlet_index, 
-            self._outlet_name,
-            system_info
-        )
+        device_name = f"{self._main_device.replace('_', ' ').title()} {self._outlet_name}" if self._outlet_name else self._main_device.replace('_', ' ').title()
+        return get_outlet_device_info_canonical(self._main_device, self._outlet_index, system_info, device_name=device_name)
 
     @property
     def is_on(self) -> Optional[bool]:
@@ -190,9 +204,9 @@ class WattBoxOutletSwitch(CoordinatorEntity, SwitchEntity):
 class WattBoxMasterSwitch(WattBoxBaseSwitch):
     """WattBox master switch (controls all outlets)."""
 
-    def __init__(self, coordinator):
+    def __init__(self, coordinator, main_device: str, name: str, entry_id: Optional[str] = None):
         """Initialize the master switch."""
-        super().__init__(coordinator, "master", "WattBox Master Switch")
+        super().__init__(coordinator, main_device, "master", name, entry_id=entry_id)
         
         # Cooldown mechanism
         self._last_operation_time = 0

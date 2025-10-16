@@ -1,24 +1,67 @@
 {
   "config": {
     "step": {
+      "connection_details": {
+        "title": "Configure WattBox Connection",
+        "description": "Enter your WattBox device details.",
+        "data": {
+          "host": "Host IP Address",
+          "username": "Username",
+          "password": "Password",
+          "name": "Device Name",
+          "enable_power_sensors": "Enable Power Monitoring Sensors",
+          "audible_alarm": "Audible Alarm Sensor",
+          "auto_reboot": "Auto Reboot Sensor",
+          "battery_health": "Battery Health Sensor",
+          "battery_test": "Battery Test Sensor",
+          "cloud_status": "Cloud Status Sensor",
+          "has_ups": "Has UPS Sensor",
+          "mute": "Mute Sensor",
+          "power_lost": "Power Lost Sensor",
+          "safe_voltage_status": "Safe Voltage Status Sensor",
+          "battery_charge": "Battery Charge Sensor",
+          "battery_load": "Battery Load Sensor",
+          "current_value": "Current Value Sensor",
+          "est_run_time": "Estimated Run Time Sensor",
+          "power_value": "Power Value Sensor",
+          "voltage_value": "Voltage Value Sensor"
+        },
+        "data_description": {
+          "host": "IP address of your WattBox device",
+          "username": "WattBox username (usually 'wattbox')",
+          "password": "WattBox password (usually 'wattbox')",
+          "name": "Friendly name for this WattBox",
+          "enable_power_sensors": "Create sensors for power, current, and voltage monitoring (system-wide and per-outlet if supported)",
+          "audible_alarm": "Expose the Audible Alarm sensor (HTTP only)",
+          "auto_reboot": "Expose the Auto Reboot sensor (HTTP only)",
+          "battery_health": "Expose the Battery Health sensor (HTTP only)",
+          "battery_test": "Expose the Battery Test sensor (HTTP only)",
+          "cloud_status": "Expose the Cloud Status sensor (HTTP only)",
+          "has_ups": "Expose the Has UPS sensor (HTTP only)",
+          "mute": "Expose the Mute sensor (HTTP only)",
+          "power_lost": "Expose the Power Lost sensor (HTTP only)",
+          "safe_voltage_status": "Expose the Safe Voltage Status sensor (HTTP only)",
+          "battery_charge": "Expose the Battery Charge sensor (HTTP only)",
+          "battery_load": "Expose the Battery Load sensor (HTTP only)",
+          "current_value": "Expose the Current Value sensor (HTTP only)",
+          "est_run_time": "Expose the Estimated Run Time sensor (HTTP only)",
+          "power_value": "Expose the Power Value sensor (HTTP only)",
+          "voltage_value": "Expose the Voltage Value sensor (HTTP only)",
+          "switch_outlet": "Expose the Outlet Switch (HTTP only)",
+          "switch_reboot": "Expose the Reboot Switch (HTTP only)",
+          "switch_auto_reboot": "Expose the Auto Reboot Switch (HTTP only)",
+          "switch_audible_alarm": "Expose the Audible Alarm Switch (HTTP only)",
+          "switch_mute": "Expose the Mute Switch (HTTP only)"
+        }
+      },
       "user": {
         "title": "Set up WattBox",
         "description": "Configure your WattBox device connection.",
         "data": {
-          "host": "Host IP Address",
-          "port": "Port",
-          "username": "Username",
-          "password": "Password",
-          "name": "Device Name",
-          "enable_power_sensors": "Enable Power Monitoring Sensors"
+          "connection_type": "Connection Type"
         },
         "data_description": {
-          "host": "IP address of your WattBox device",
-          "port": "Telnet port (usually 23)",
-          "username": "WattBox username (usually 'wattbox')",
-          "password": "WattBox password (usually 'wattbox')",
-          "name": "Friendly name for this WattBox",
-          "enable_power_sensors": "Create sensors for power, current, and voltage monitoring (system-wide and per-outlet if supported)"
+          "connection_type": "Select the protocol to connect to your WattBox (HTTP, Telnet, SSH)"
         }
       },
       "reconfigure": {
@@ -26,26 +69,62 @@
         "description": "Update your WattBox device configuration.",
         "data": {
           "host": "Host IP Address",
-          "port": "Port",
+          "connection_type": "Connection Type",
           "username": "Username",
           "password": "Password",
           "name": "Device Name",
-          "enable_power_sensors": "Enable Power Monitoring Sensors"
+          "enable_power_sensors": "Enable Power Monitoring Sensors",
+          "audible_alarm": "Audible Alarm Sensor",
+          "auto_reboot": "Auto Reboot Sensor",
+          "battery_health": "Battery Health Sensor",
+          "battery_test": "Battery Test Sensor",
+          "cloud_status": "Cloud Status Sensor",
+          "has_ups": "Has UPS Sensor",
+          "mute": "Mute Sensor",
+          "power_lost": "Power Lost Sensor",
+          "safe_voltage_status": "Safe Voltage Status Sensor",
+          "battery_charge": "Battery Charge Sensor",
+          "battery_load": "Battery Load Sensor",
+          "current_value": "Current Value Sensor",
+          "est_run_time": "Estimated Run Time Sensor",
+          "power_value": "Power Value Sensor",
+          "voltage_value": "Voltage Value Sensor"
         },
         "data_description": {
           "host": "IP address of your WattBox device",
-          "port": "Telnet port (usually 23)",
+          "connection_type": "Select the protocol to connect to your WattBox (HTTP, Telnet, SSH)",
           "username": "WattBox username (usually 'wattbox')",
           "password": "WattBox password (usually 'wattbox')",
           "name": "Friendly name for this WattBox",
-          "enable_power_sensors": "Create sensors for power, current, and voltage monitoring (system-wide and per-outlet if supported)"
+          "enable_power_sensors": "Create sensors for power, current, and voltage monitoring (system-wide and per-outlet if supported)",
+          "audible_alarm": "Expose the Audible Alarm sensor (HTTP only)",
+          "auto_reboot": "Expose the Auto Reboot sensor (HTTP only)",
+          "battery_health": "Expose the Battery Health sensor (HTTP only)",
+          "battery_test": "Expose the Battery Test sensor (HTTP only)",
+          "cloud_status": "Expose the Cloud Status sensor (HTTP only)",
+          "has_ups": "Expose the Has UPS sensor (HTTP only)",
+          "mute": "Expose the Mute sensor (HTTP only)",
+          "power_lost": "Expose the Power Lost sensor (HTTP only)",
+          "safe_voltage_status": "Expose the Safe Voltage Status sensor (HTTP only)",
+          "battery_charge": "Expose the Battery Charge sensor (HTTP only)",
+          "battery_load": "Expose the Battery Load sensor (HTTP only)",
+          "current_value": "Expose the Current Value sensor (HTTP only)",
+          "est_run_time": "Expose the Estimated Run Time sensor (HTTP only)",
+          "power_value": "Expose the Power Value sensor (HTTP only)",
+          "voltage_value": "Expose the Voltage Value sensor (HTTP only)",
+          "switch_outlet": "Expose the Outlet Switch (HTTP only)",
+          "switch_reboot": "Expose the Reboot Switch (HTTP only)",
+          "switch_auto_reboot": "Expose the Auto Reboot Switch (HTTP only)",
+          "switch_audible_alarm": "Expose the Audible Alarm Switch (HTTP only)",
+          "switch_mute": "Expose the Mute Switch (HTTP only)"
         }
       }
     },
     "error": {
       "cannot_connect": "Failed to connect to WattBox device. Please check the host and port.",
       "invalid_auth": "Invalid username or password.",
-      "unknown": "Unexpected error occurred."
+      "unknown": "Unexpected error occurred.",
+      "name_exists": "A device with this name already exists. Please choose a unique name."
     },
     "abort": {
       "already_configured": "This WattBox device is already configured."

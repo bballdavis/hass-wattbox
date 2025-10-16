@@ -1,9 +1,9 @@
 """Base Entity component for wattbox."""
 from typing import Any, Callable, Dict, Literal
 
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.dispatcher import async_dispatcher_connect
-from homeassistant.helpers.entity import Entity
+from homeassistant.core import HomeAssistant, callback # type: ignore
+from homeassistant.helpers.dispatcher import async_dispatcher_connect # type: ignore
+from homeassistant.helpers.entity import Entity # type: ignore
 
 from .const import DOMAIN, TOPIC_UPDATE
 
