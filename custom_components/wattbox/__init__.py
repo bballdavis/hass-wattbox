@@ -75,23 +75,31 @@ class WattBoxUpdateCoordinator(DataUpdateCoordinator):
             }
             
         except WattBoxConnectionError as err:
-            # Try to reconnect once on connection error
-            try:
-                await self.hass.async_add_executor_job(self.client.connect)
-                device_info = await self.hass.async_add_executor_job(
-                    self.client.get_device_info, True
-                )
-                return {
-                    "device_info": device_info,
-                    "outlets": device_info.outlets,
-                    "system_info": device_info.system_info,
-                    "power_status": device_info.power_status,
-                    "ups_status": device_info.ups_status,
-                    "ups_connected": device_info.ups_connected,
-                    "auto_reboot_enabled": device_info.auto_reboot_enabled,
-                }
-            except Exception as reconnect_err:
-                raise UpdateFailed(f"Error communicating with WattBox after reconnect: {reconnect_err}")
+            # Try to reconnect a few times on connection error with exponential backoff
+            backoff_delays = [0.5, 1.0, 2.0]
+            for attempt, delay in enumerate(backoff_delays, start=1):
+                _LOGGER.warning(f"Connection error to WattBox, attempt {attempt} of {len(backoff_delays)}: {err}")
+                try:
+                    await self.hass.async_add_executor_job(self.client.connect)
+                    device_info = await self.hass.async_add_executor_job(
+                        self.client.get_device_info, True
+                    )
+                    _LOGGER.info("Reconnected to WattBox on attempt %d", attempt)
+                    return {
+                        "device_info": device_info,
+                        "outlets": device_info.outlets,
+                        "system_info": device_info.system_info,
+                        "power_status": device_info.power_status,
+                        "ups_status": device_info.ups_status,
+                        "ups_connected": device_info.ups_connected,
+                        "auto_reboot_enabled": device_info.auto_reboot_enabled,
+                    }
+                except Exception as reconnect_err:
+                    _LOGGER.debug("Reconnect attempt %d failed: %s", attempt, reconnect_err)
+                    if attempt < len(backoff_delays):
+                        await asyncio.sleep(delay)
+                    else:
+                        raise UpdateFailed(f"Error communicating with WattBox after reconnect attempts: {reconnect_err}")
         except (WattBoxError, ValueError) as err:
             # Handle parsing errors more gracefully
             _LOGGER.warning(f"Error updating WattBox data: {err}")
