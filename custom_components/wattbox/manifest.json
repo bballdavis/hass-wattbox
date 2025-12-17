@@ -10,5 +10,5 @@
     "iot_class": "local_polling",
     "issue_tracker": "https://github.com/bballdavis/hass-wattbox/issues",
     "requirements": ["beautifulsoup4", "httpx", "scrapli", "voluptuous", "lxml"],
-    "version": "1.5.2"
+    "version": "1.2.0"
 }
