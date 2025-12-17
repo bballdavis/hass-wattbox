@@ -46,12 +46,7 @@
           "current_value": "Expose the Current Value sensor (HTTP only)",
           "est_run_time": "Expose the Estimated Run Time sensor (HTTP only)",
           "power_value": "Expose the Power Value sensor (HTTP only)",
-          "voltage_value": "Expose the Voltage Value sensor (HTTP only)",
-          "switch_outlet": "Expose the Outlet Switch (HTTP only)",
-          "switch_reboot": "Expose the Reboot Switch (HTTP only)",
-          "switch_auto_reboot": "Expose the Auto Reboot Switch (HTTP only)",
-          "switch_audible_alarm": "Expose the Audible Alarm Switch (HTTP only)",
-          "switch_mute": "Expose the Mute Switch (HTTP only)"
+          "voltage_value": "Expose the Voltage Value sensor (HTTP only)"
         }
       },
       "user": {
@@ -111,12 +106,7 @@
           "current_value": "Expose the Current Value sensor (HTTP only)",
           "est_run_time": "Expose the Estimated Run Time sensor (HTTP only)",
           "power_value": "Expose the Power Value sensor (HTTP only)",
-          "voltage_value": "Expose the Voltage Value sensor (HTTP only)",
-          "switch_outlet": "Expose the Outlet Switch (HTTP only)",
-          "switch_reboot": "Expose the Reboot Switch (HTTP only)",
-          "switch_auto_reboot": "Expose the Auto Reboot Switch (HTTP only)",
-          "switch_audible_alarm": "Expose the Audible Alarm Switch (HTTP only)",
-          "switch_mute": "Expose the Mute Switch (HTTP only)"
+          "voltage_value": "Expose the Voltage Value sensor (HTTP only)"
         }
       }
     },
