@@ -8,6 +8,7 @@ import socket
 import time
 import logging
 import threading
+import errno
 from typing import Optional, List, Dict, Any, Union
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 
@@ -127,6 +128,8 @@ class WattBoxClient:
             self._authenticate()
             
             logger.info(f"Successfully connected to WattBox at {self.host}")
+            # Mark as connected for is_connected() checks
+            self._connected = True
             
         except socket.error as e:
             self._cleanup_connection()
@@ -237,7 +240,15 @@ class WattBoxClient:
                         return buffer
             except socket.timeout:
                 continue
-            except Exception as e:
+            except BrokenPipeError as e:
+                logger.debug(f"Broken pipe while waiting for prompts: {e}")
+                self._cleanup_connection()
+                raise WattBoxConnectionError(f"Broken pipe while waiting for prompts: {e}")
+            except OSError as e:
+                if getattr(e, "errno", None) == errno.EPIPE:
+                    logger.debug(f"OSError EPIPE while waiting for prompts: {e}")
+                    self._cleanup_connection()
+                    raise WattBoxConnectionError(f"Broken pipe while waiting for prompts: {e}")
                 logger.debug(f"Exception reading data: {e}")
                 break
         logger.debug(f"Timeout waiting for prompts. Received: {repr(buffer)}")
@@ -310,7 +321,8 @@ class WattBoxClient:
                 
             except socket.timeout:
                 raise WattBoxTimeoutError(f"Command timeout: {command}")
-            except (WattBoxTimeoutError, WattBoxCommandError):
+            except (WattBoxTimeoutError, WattBoxCommandError, WattBoxConnectionError):
+                # Propagate connection-level errors so the coordinator can trigger reconnects
                 raise
             except Exception as e:
                 raise WattBoxCommandError(f"Command failed: {e}")
@@ -779,6 +791,16 @@ class WattBoxClient:
             except socket.timeout:
                 # No more data available, break
                 break
+            except BrokenPipeError as e:
+                logger.debug(f"Broken pipe while reading available data: {e}")
+                self._cleanup_connection()
+                raise WattBoxConnectionError(f"Broken pipe when reading available data: {e}")
+            except OSError as e:
+                if getattr(e, "errno", None) == errno.EPIPE:
+                    logger.debug(f"OSError EPIPE while reading available data: {e}")
+                    self._cleanup_connection()
+                    raise WattBoxConnectionError(f"Broken pipe when reading available data: {e}")
+                break
             except Exception:
                 break
         
@@ -806,7 +828,15 @@ class WattBoxClient:
                     return buffer
             except socket.timeout:
                 continue
-            except Exception:
+            except BrokenPipeError as e:
+                logger.debug(f"Broken pipe while waiting for prompt: {e}")
+                self._cleanup_connection()
+                raise WattBoxConnectionError(f"Broken pipe while waiting for prompt: {e}")
+            except OSError as e:
+                if getattr(e, "errno", None) == errno.EPIPE:
+                    logger.debug(f"OSError EPIPE while waiting for prompt: {e}")
+                    self._cleanup_connection()
+                    raise WattBoxConnectionError(f"Broken pipe while waiting for prompt: {e}")
                 break
         
         raise WattBoxTimeoutError(f"Timeout waiting for prompt: {prompt}")
@@ -815,7 +845,19 @@ class WattBoxClient:
         """Send raw data to the connection."""
         if not self._connection:
             raise WattBoxConnectionError("Not connected")
-        self._connection.sendall(data.encode())
+        try:
+            self._connection.sendall(data.encode())
+        except BrokenPipeError as e:
+            # Remote end closed the connection - cleanup and escalate as connection error
+            logger.debug(f"Broken pipe on send: {e}")
+            self._cleanup_connection()
+            raise WattBoxConnectionError(f"Broken pipe when sending data: {e}")
+        except OSError as e:
+            if getattr(e, "errno", None) == errno.EPIPE:
+                logger.debug(f"OSError EPIPE on send: {e}")
+                self._cleanup_connection()
+                raise WattBoxConnectionError(f"Broken pipe when sending data: {e}")
+            raise
 
     def _read_until_newline(self, timeout: Optional[float] = None) -> str:
         """Read response until newline."""
@@ -839,6 +881,16 @@ class WattBoxClient:
                     break
             except socket.timeout:
                 continue
+            except BrokenPipeError as e:
+                logger.debug(f"Broken pipe on read: {e}")
+                self._cleanup_connection()
+                raise WattBoxConnectionError(f"Broken pipe when reading data: {e}")
+            except OSError as e:
+                if getattr(e, "errno", None) == errno.EPIPE:
+                    logger.debug(f"OSError EPIPE on read: {e}")
+                    self._cleanup_connection()
+                    raise WattBoxConnectionError(f"Broken pipe when reading data: {e}")
+                break
             except Exception:
                 break
         

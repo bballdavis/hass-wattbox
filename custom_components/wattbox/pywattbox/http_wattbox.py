@@ -4,6 +4,8 @@ import asyncio
 import logging
 
 import httpx
+import errno
+from ..pywattbox_800.exceptions import WattBoxConnectionError
 from bs4 import BeautifulSoup
 
 from .base import BaseWattBox, Commands, Outlet, _async_create_wattbox, _create_wattbox
@@ -23,25 +25,40 @@ class HttpWattBox(BaseWattBox):
     # Get Initial Data
     def get_initial(self) -> None:
         logger.debug("Get Initial")
-        response = httpx.get(
-            f"{self.base_host}/wattbox_info.xml",
-            auth=(self.user, self.password),
-        )
-        logger.debug(f"    Status: {response.status_code}")
-        response.raise_for_status()
-        self.parse_initial(response)
-        self.parse_update(response)
+        try:
+            response = httpx.get(
+                f"{self.base_host}/wattbox_info.xml",
+                auth=(self.user, self.password),
+            )
+            logger.debug(f"    Status: {response.status_code}")
+            response.raise_for_status()
+            self.parse_initial(response)
+            self.parse_update(response)
+        except (httpx.RequestError, httpx.HTTPStatusError, BrokenPipeError, OSError) as e:
+            logger.debug(f"HTTP get_initial error for {self.base_host}: {e}")
+            # Propagate as connection error so caller (coordinator) can reconnect
+            raise WattBoxConnectionError(f"HTTP get_initial failed: {e}")
 
     async def async_get_initial(self) -> None:
         logger.debug("Async Get Initial")
-        response = await self.async_client.get(
-            f"{self.base_host}/wattbox_info.xml",
-            auth=(self.user, self.password),
-        )
-        logger.debug(f"    Status: {response.status_code}")
-        response.raise_for_status()
-        await self.async_parse_initial(response)
-        await self.async_parse_update(response)
+        try:
+            response = await self.async_client.get(
+                f"{self.base_host}/wattbox_info.xml",
+                auth=(self.user, self.password),
+            )
+            logger.debug(f"    Status: {response.status_code}")
+            response.raise_for_status()
+            await self.async_parse_initial(response)
+            await self.async_parse_update(response)
+        except (httpx.RequestError, httpx.HTTPStatusError, BrokenPipeError, OSError) as e:
+            logger.debug(f"Async HTTP get_initial error for {self.base_host}: {e}")
+            # Close and recreate async client to recover from transport errors
+            try:
+                await self.async_client.aclose()
+            except Exception:
+                pass
+            self.async_client = httpx.AsyncClient(verify=False)
+            raise WattBoxConnectionError(f"Async HTTP get_initial failed: {e}")
 
     async def async_parse_initial(self, response: httpx.Response) -> None:
         logger.debug("Async Parse Initial (threaded)")
@@ -119,23 +136,36 @@ class HttpWattBox(BaseWattBox):
     # Get Update Data
     def update(self) -> None:
         logger.debug("Update")
-        response = httpx.get(
-            f"{self.base_host}/wattbox_info.xml",
-            auth=(self.user, self.password),
-        )
-        logger.debug(f"    Status: {response.status_code}")
-        response.raise_for_status()
-        self.parse_update(response)
+        try:
+            response = httpx.get(
+                f"{self.base_host}/wattbox_info.xml",
+                auth=(self.user, self.password),
+            )
+            logger.debug(f"    Status: {response.status_code}")
+            response.raise_for_status()
+            self.parse_update(response)
+        except (httpx.RequestError, httpx.HTTPStatusError, BrokenPipeError, OSError) as e:
+            logger.debug(f"HTTP update error for {self.base_host}: {e}")
+            raise WattBoxConnectionError(f"HTTP update failed: {e}")
 
     async def async_update(self) -> None:
         logger.debug("Async Update")
-        response = await self.async_client.get(
-            f"{self.base_host}/wattbox_info.xml",
-            auth=(self.user, self.password),
-        )
-        logger.debug(f"    Status: {response.status_code}")
-        response.raise_for_status()
-        await self.async_parse_update(response)
+        try:
+            response = await self.async_client.get(
+                f"{self.base_host}/wattbox_info.xml",
+                auth=(self.user, self.password),
+            )
+            logger.debug(f"    Status: {response.status_code}")
+            response.raise_for_status()
+            await self.async_parse_update(response)
+        except (httpx.RequestError, httpx.HTTPStatusError, BrokenPipeError, OSError) as e:
+            logger.debug(f"Async HTTP update error for {self.base_host}: {e}")
+            try:
+                await self.async_client.aclose()
+            except Exception:
+                pass
+            self.async_client = httpx.AsyncClient(verify=False)
+            raise WattBoxConnectionError(f"Async HTTP update failed: {e}")
 
     # Parse Update Data
     def parse_update(self, response: httpx.Response) -> None:
@@ -236,13 +266,36 @@ class HttpWattBox(BaseWattBox):
     # Send command
     def send_command(self, outlet: int, command: Commands) -> None:
         logger.debug("Send Command")
-        response = httpx.get(
-            f"{self.base_host}/control.cgi",
-            params={"outlet": outlet, "command": command.value},
-            auth=(self.user, self.password),
-        )
-        logger.debug(f"    Status: {response.status_code}")
-        response.raise_for_status()
+        try:
+            response = httpx.get(
+                f"{self.base_host}/control.cgi",
+                params={"outlet": outlet, "command": command.value},
+                auth=(self.user, self.password),
+            )
+            logger.debug(f"    Status: {response.status_code}")
+            response.raise_for_status()
+        except (httpx.RequestError, httpx.HTTPStatusError, BrokenPipeError, OSError) as e:
+            logger.debug(f"HTTP send_command error for {self.base_host}: {e}")
+            raise WattBoxConnectionError(f"HTTP send_command failed: {e}")
+
+    async def async_send_command(self, outlet: int, command: Commands) -> None:
+        logger.debug("Async Send Command")
+        try:
+            response = await self.async_client.get(
+                f"{self.base_host}/control.cgi",
+                params={"outlet": outlet, "command": command.value},
+                auth=(self.user, self.password),
+            )
+            logger.debug(f"    Status: {response.status_code}")
+            response.raise_for_status()
+        except (httpx.RequestError, httpx.HTTPStatusError, BrokenPipeError, OSError) as e:
+            logger.debug(f"Async HTTP send_command error for {self.base_host}: {e}")
+            try:
+                await self.async_client.aclose()
+            except Exception:
+                pass
+            self.async_client = httpx.AsyncClient(verify=False)
+            raise WattBoxConnectionError(f"Async HTTP send_command failed: {e}")
 
     async def async_send_command(self, outlet: int, command: Commands) -> None:
         logger.debug("Async Send Command")
